@@ -21,9 +21,6 @@ public class Meta {
 	@Column(nullable = false, length = 255)
 	private String artist;
 
-	@Column(nullable = false)
-	private boolean deleted;
-
 	public Long getId() {
 		return id;
 	}
@@ -46,13 +43,5 @@ public class Meta {
 
 	public void setArtist(String artist) {
 		this.artist = artist;
-	}
-
-	public boolean isDeleted() {
-		return deleted;
-	}
-
-	public void setDeleted(boolean deleted) {
-		this.deleted = deleted;
 	}
 }

@@ -27,9 +27,6 @@ public class User {
 	@Column(name = "is_admin", nullable = false)
 	private boolean isAdmin;
 
-	@Column(nullable = false)
-	private boolean deleted;
-
 	public Long getId() {
 		return id;
 	}
@@ -68,13 +65,5 @@ public class User {
 
 	public void setAdmin(boolean admin) {
 		isAdmin = admin;
-	}
-
-	public boolean isDeleted() {
-		return deleted;
-	}
-
-	public void setDeleted(boolean deleted) {
-		this.deleted = deleted;
 	}
 }

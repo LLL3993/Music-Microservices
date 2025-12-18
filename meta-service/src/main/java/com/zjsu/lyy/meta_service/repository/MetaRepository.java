@@ -6,11 +6,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MetaRepository extends JpaRepository<Meta, Long> {
 
-	Optional<Meta> findByIdAndDeletedFalse(Long id);
+	Optional<Meta> findBySongName(String songName);
 
-	Optional<Meta> findBySongNameAndDeletedFalse(String songName);
+	boolean existsBySongName(String songName);
 
-	boolean existsBySongNameAndDeletedFalse(String songName);
-
-	boolean existsBySongNameAndDeletedFalseAndIdNot(String songName, Long id);
+	boolean existsBySongNameAndIdNot(String songName, Long id);
 }

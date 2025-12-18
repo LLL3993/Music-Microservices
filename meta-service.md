@@ -7,7 +7,7 @@
 ## 功能范围
 
 - 歌曲信息新增（Create）
-- 歌曲信息删除（Delete：软删除，将 `deleted` 置为 `true`）
+- 歌曲信息删除（Delete：硬删除）
 - 歌曲信息查询（Read：仅按 `song_name` 查询）
 - 歌曲信息修改（Update）
 
@@ -21,8 +21,7 @@
 CREATE TABLE meta (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
     song_name  VARCHAR(255) NOT NULL UNIQUE,
-    artist     VARCHAR(255) NOT NULL,
-    deleted    BOOLEAN DEFAULT FALSE
+    artist     VARCHAR(255) NOT NULL
 );
 ```
 
@@ -85,7 +84,7 @@ meta-service
 
 ### 2) 按歌曲名查询
 
-- `GET /api/meta/song-name/{songName}`
+- `GET /api/meta/song-name?songName=...`
 - 返回：`200`，返回 `MetaResponse`
 
 ### 3) 修改歌曲信息
@@ -102,10 +101,10 @@ meta-service
 
 - 返回：`200`，返回 `MetaResponse`
 
-### 4) 删除歌曲信息（软删除）
+### 4) 删除歌曲信息（硬删除）
 
 - `DELETE /api/meta/{id}`
-- 行为：将该行的 `deleted` 置为 `true`
+- 行为：硬删除该记录
 - 返回：`204`
 
 ## 返回与异常

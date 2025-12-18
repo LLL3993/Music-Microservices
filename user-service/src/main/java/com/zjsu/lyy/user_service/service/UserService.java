@@ -21,10 +21,10 @@ public class UserService {
 
 	@Transactional
 	public UserResponse createUser(CreateUserRequest request) {
-		if (userRepository.existsByUsernameAndDeletedFalse(request.username())) {
+		if (userRepository.existsByUsername(request.username())) {
 			throw new ConflictException("username 已存在");
 		}
-		if (userRepository.existsByEmailAndDeletedFalse(request.email())) {
+		if (userRepository.existsByEmail(request.email())) {
 			throw new ConflictException("email 已存在");
 		}
 
@@ -33,7 +33,6 @@ public class UserService {
 		user.setEmail(request.email());
 		user.setPassword(request.password());
 		user.setAdmin(Boolean.TRUE.equals(request.isAdmin()));
-		user.setDeleted(false);
 
 		User saved = userRepository.save(user);
 		return toResponse(saved);
@@ -41,20 +40,20 @@ public class UserService {
 
 	@Transactional(readOnly = true)
 	public UserResponse getUserByUsername(String username) {
-		User user = userRepository.findByUsernameAndDeletedFalse(username)
+		User user = userRepository.findByUsername(username)
 				.orElseThrow(() -> new NotFoundException("用户不存在"));
 		return toResponse(user);
 	}
 
 	@Transactional
 	public UserResponse updateUser(Long id, UpdateUserRequest request) {
-		User user = userRepository.findByIdAndDeletedFalse(id)
+		User user = userRepository.findById(id)
 				.orElseThrow(() -> new NotFoundException("用户不存在"));
 
-		if (userRepository.existsByUsernameAndDeletedFalseAndIdNot(request.username(), id)) {
+		if (userRepository.existsByUsernameAndIdNot(request.username(), id)) {
 			throw new ConflictException("username 已存在");
 		}
-		if (userRepository.existsByEmailAndDeletedFalseAndIdNot(request.email(), id)) {
+		if (userRepository.existsByEmailAndIdNot(request.email(), id)) {
 			throw new ConflictException("email 已存在");
 		}
 
@@ -69,13 +68,13 @@ public class UserService {
 
 	@Transactional
 	public void deleteUser(Long id) {
-		User user = userRepository.findByIdAndDeletedFalse(id)
-				.orElseThrow(() -> new NotFoundException("用户不存在"));
-		user.setDeleted(true);
-		userRepository.save(user);
+		if (!userRepository.existsById(id)) {
+			throw new NotFoundException("用户不存在");
+		}
+		userRepository.deleteById(id);
 	}
 
 	private static UserResponse toResponse(User user) {
-		return new UserResponse(user.getId(), user.getUsername(), user.getEmail(), user.isAdmin(), user.isDeleted());
+		return new UserResponse(user.getId(), user.getUsername(), user.getEmail(), user.isAdmin());
 	}
 }

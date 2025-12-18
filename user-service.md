@@ -11,7 +11,7 @@
 ## 功能范围
 
 - 用户信息新增（Create）
-- 用户信息删除（Delete：软删除，将 `deleted` 置为 `true`）
+- 用户信息删除（Delete：硬删除）
 - 用户信息查询（Read：仅按 `username` 查询）
 - 用户信息修改（Update）
 
@@ -27,8 +27,7 @@ CREATE TABLE user (
     username   VARCHAR(50)  NOT NULL UNIQUE,
     email      VARCHAR(255) NOT NULL UNIQUE,
     password   VARCHAR(255) NOT NULL,
-    is_admin   BOOLEAN DEFAULT FALSE,
-    deleted    BOOLEAN DEFAULT FALSE
+    is_admin   BOOLEAN DEFAULT FALSE
 );
 ```
 
@@ -93,7 +92,7 @@ user-service
 
 ### 2) 按用户名查询用户
 
-- `GET /api/users/username/{username}`
+- `GET /api/users/username?username=...`
 - 返回：`200`，返回 `UserResponse`
 
 ### 3) 修改用户
@@ -112,10 +111,10 @@ user-service
 
 - 返回：`200`，返回 `UserResponse`
 
-### 4) 删除用户（软删除）
+### 4) 删除用户（硬删除）
 
 - `DELETE /api/users/{id}`
-- 行为：将该用户的 `deleted` 置为 `true`
+- 行为：硬删除该用户记录
 - 返回：`204`
 
 ## 返回与异常

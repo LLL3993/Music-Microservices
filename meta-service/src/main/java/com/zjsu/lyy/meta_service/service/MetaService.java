@@ -21,14 +21,13 @@ public class MetaService {
 
 	@Transactional
 	public MetaResponse createMeta(CreateMetaRequest request) {
-		if (metaRepository.existsBySongNameAndDeletedFalse(request.songName())) {
+		if (metaRepository.existsBySongName(request.songName())) {
 			throw new ConflictException("songName 已存在");
 		}
 
 		Meta meta = new Meta();
 		meta.setSongName(request.songName());
 		meta.setArtist(request.artist());
-		meta.setDeleted(false);
 
 		Meta saved = metaRepository.save(meta);
 		return toResponse(saved);
@@ -36,17 +35,17 @@ public class MetaService {
 
 	@Transactional(readOnly = true)
 	public MetaResponse getBySongName(String songName) {
-		Meta meta = metaRepository.findBySongNameAndDeletedFalse(songName)
+		Meta meta = metaRepository.findBySongName(songName)
 				.orElseThrow(() -> new NotFoundException("歌曲不存在"));
 		return toResponse(meta);
 	}
 
 	@Transactional
 	public MetaResponse updateMeta(Long id, UpdateMetaRequest request) {
-		Meta meta = metaRepository.findByIdAndDeletedFalse(id)
+		Meta meta = metaRepository.findById(id)
 				.orElseThrow(() -> new NotFoundException("歌曲不存在"));
 
-		if (metaRepository.existsBySongNameAndDeletedFalseAndIdNot(request.songName(), id)) {
+		if (metaRepository.existsBySongNameAndIdNot(request.songName(), id)) {
 			throw new ConflictException("songName 已存在");
 		}
 
@@ -59,13 +58,13 @@ public class MetaService {
 
 	@Transactional
 	public void deleteMeta(Long id) {
-		Meta meta = metaRepository.findByIdAndDeletedFalse(id)
-				.orElseThrow(() -> new NotFoundException("歌曲不存在"));
-		meta.setDeleted(true);
-		metaRepository.save(meta);
+		if (!metaRepository.existsById(id)) {
+			throw new NotFoundException("歌曲不存在");
+		}
+		metaRepository.deleteById(id);
 	}
 
 	private static MetaResponse toResponse(Meta meta) {
-		return new MetaResponse(meta.getId(), meta.getSongName(), meta.getArtist(), meta.isDeleted());
+		return new MetaResponse(meta.getId(), meta.getSongName(), meta.getArtist());
 	}
 }
