@@ -5,6 +5,7 @@ import com.zjsu.lyy.meta_service.dto.MetaResponse;
 import com.zjsu.lyy.meta_service.dto.UpdateMetaRequest;
 import com.zjsu.lyy.meta_service.service.MetaService;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,6 +39,15 @@ public class MetaController {
 		return metaService.getBySongName(songName);
 	}
 
+	@GetMapping("/song-name-like")
+	public List<MetaResponse> getBySongNameLike(@RequestParam String songName) {
+		return metaService.getBySongNameLike(songName);
+	}
+
+	@GetMapping("/artist-name")
+	public List<MetaResponse> getByArtistNameLike(@RequestParam String artistName) {
+		return metaService.getByArtistNameLike(artistName);
+	}
 
 	@PutMapping("/{id}")
 	public MetaResponse updateMeta(@PathVariable Long id, @Valid @RequestBody UpdateMetaRequest request) {

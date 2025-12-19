@@ -7,6 +7,7 @@ import com.zjsu.lyy.meta_service.entity.Meta;
 import com.zjsu.lyy.meta_service.exception.ConflictException;
 import com.zjsu.lyy.meta_service.exception.NotFoundException;
 import com.zjsu.lyy.meta_service.repository.MetaRepository;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +39,28 @@ public class MetaService {
 		Meta meta = metaRepository.findBySongName(songName)
 				.orElseThrow(() -> new NotFoundException("歌曲不存在"));
 		return toResponse(meta);
+	}
+
+	@Transactional(readOnly = true)
+	public List<MetaResponse> getBySongNameLike(String songName) {
+		if (songName == null || songName.isBlank()) {
+			return List.of();
+		}
+		return metaRepository.findBySongNameContainingIgnoreCase(songName)
+				.stream()
+				.map(MetaService::toResponse)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<MetaResponse> getByArtistNameLike(String artistName) {
+		if (artistName == null || artistName.isBlank()) {
+			return List.of();
+		}
+		return metaRepository.findByArtistContainingIgnoreCase(artistName)
+				.stream()
+				.map(MetaService::toResponse)
+				.toList();
 	}
 
 	@Transactional

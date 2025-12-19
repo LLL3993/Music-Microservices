@@ -1,18 +1,52 @@
 <script setup>
+import axios from 'axios'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
 const route = useRoute()
 
+const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8090'
+
+function safeParseJson(value) {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+const token = ref(localStorage.getItem('auth_token') || '')
+const user = ref(safeParseJson(localStorage.getItem('auth_user') || 'null'))
+
+const isAuthed = computed(() => Boolean(token.value))
+
 const headerKeyword = ref(typeof route.query.q === 'string' ? route.query.q : '')
 
 const isDiscoverActive = computed(() => route.name === 'Discover')
 const isSearchActive = computed(() => route.name === 'Search')
+const isFavoritesActive = computed(() => route.name === 'Favorites')
+const isPlaylistsActive = computed(() => route.name === 'Playlists')
 
 const theme = ref(document.documentElement.getAttribute('data-theme') || 'dark')
 
 const isDark = computed(() => theme.value === 'dark')
+
+const authOpen = ref(false)
+const authMode = ref('login')
+const submitting = ref(false)
+const formError = ref('')
+
+const loginForm = ref({
+  username: '',
+  password: '',
+})
+const registerForm = ref({
+  username: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+})
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
@@ -24,6 +58,110 @@ function onHeaderSearchEnter() {
   const key = headerKeyword.value.trim()
   if (!key) return
   router.push(`/search?q=${encodeURIComponent(key)}`)
+}
+
+function openLogin() {
+  authMode.value = 'login'
+  authOpen.value = true
+  formError.value = ''
+}
+
+function openRegister() {
+  authMode.value = 'register'
+  authOpen.value = true
+  formError.value = ''
+}
+
+function closeAuth() {
+  authOpen.value = false
+  submitting.value = false
+  formError.value = ''
+}
+
+function switchToRegister() {
+  authMode.value = 'register'
+  formError.value = ''
+}
+
+function switchToLogin() {
+  authMode.value = 'login'
+  formError.value = ''
+}
+
+function saveAuth(authToken, authUser) {
+  token.value = authToken || ''
+  user.value = authUser || null
+  localStorage.setItem('auth_token', token.value)
+  localStorage.setItem('auth_user', JSON.stringify(user.value))
+}
+
+function logout() {
+  token.value = ''
+  user.value = null
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_user')
+}
+
+function pickErrorMessage(err) {
+  const message = err?.response?.data?.message
+  if (typeof message === 'string' && message.trim()) return message
+  return '请求失败'
+}
+
+async function submitLogin() {
+  const username = loginForm.value.username.trim()
+  const password = loginForm.value.password.trim()
+  if (!username || !password) {
+    formError.value = '用户名和密码为必填'
+    return
+  }
+
+  submitting.value = true
+  formError.value = ''
+  try {
+    const { data } = await axios.post(`${apiBase}/api/auth/login`, {
+      username,
+      password,
+    })
+    saveAuth(data?.token, data?.user)
+    closeAuth()
+  } catch (err) {
+    formError.value = pickErrorMessage(err)
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function submitRegister() {
+  const username = registerForm.value.username.trim()
+  const email = registerForm.value.email.trim()
+  const password = registerForm.value.password.trim()
+  const confirmPassword = registerForm.value.confirmPassword.trim()
+
+  if (!username || !email || !password || !confirmPassword) {
+    formError.value = '用户名、邮箱、密码、确认密码为必填'
+    return
+  }
+  if (password !== confirmPassword) {
+    formError.value = '两次输入的密码不一致'
+    return
+  }
+
+  submitting.value = true
+  formError.value = ''
+  try {
+    const { data } = await axios.post(`${apiBase}/api/auth/register`, {
+      username,
+      email,
+      password,
+    })
+    saveAuth(data?.token, data?.user)
+    closeAuth()
+  } catch (err) {
+    formError.value = pickErrorMessage(err)
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -50,17 +188,18 @@ function onHeaderSearchEnter() {
       </div>
 
       <div class="topbar-right">
-        <button class="btn ghost" type="button">登录</button>
-        <button class="btn primary" type="button">注册</button>
+        <template v-if="!isAuthed">
+          <button class="btn ghost" type="button" @click="openLogin">登录</button>
+          <button class="btn primary" type="button" @click="openRegister">注册</button>
+        </template>
 
-        <div class="user">
-          <img
-            class="avatar"
-            src="https://dummyimage.com/320x100/999999/ff4400.png&text=MUSIC"
-            alt="User"
-          />
+        <div v-if="isAuthed" class="user">
+          <div class="user-name">{{ user?.username || '已登录' }}</div>
+          <img class="avatar" src="https://dummyimage.com/80x80/999999/ff4400.png&text=U" alt="User" />
           <div class="user-menu">
-            <div class="menu-card"></div>
+            <div class="menu-card">
+              <button class="menu-btn" type="button" @click="logout">退出登录</button>
+            </div>
           </div>
         </div>
 
@@ -111,8 +250,20 @@ function onHeaderSearchEnter() {
             @click.prevent="router.push({ name: 'Search' })"
             >搜索</a
           >
-          <a class="nav-item" href="#" @click.prevent>我的收藏</a>
-          <a class="nav-item" href="#" @click.prevent>歌单</a>
+          <a
+            class="nav-item"
+            :class="{ active: isFavoritesActive }"
+            href="/favorites"
+            @click.prevent="router.push({ name: 'Favorites' })"
+            >我的收藏</a
+          >
+          <a
+            class="nav-item"
+            :class="{ active: isPlaylistsActive }"
+            href="/playlists"
+            @click.prevent="router.push({ name: 'Playlists' })"
+            >歌单</a
+          >
         </nav>
       </aside>
 
@@ -122,6 +273,64 @@ function onHeaderSearchEnter() {
     </div>
 
     <footer class="playerbar"></footer>
+  </div>
+
+  <div v-if="authOpen" class="modal-mask">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">{{ authMode === 'login' ? '登录' : '注册' }}</div>
+        <button class="modal-close" type="button" @click="closeAuth">×</button>
+      </div>
+
+      <div v-if="authMode === 'login'" class="form">
+        <div class="field">
+          <div class="label">用户名</div>
+          <input v-model="loginForm.username" class="field-input" placeholder="请输入用户名" />
+        </div>
+        <div class="field">
+          <div class="label">密码</div>
+          <input v-model="loginForm.password" class="field-input" type="password" placeholder="请输入密码" />
+        </div>
+
+        <div class="form-error" v-if="formError">{{ formError }}</div>
+
+        <button class="submit-btn" type="button" :disabled="submitting" @click="submitLogin">
+          {{ submitting ? '登录中...' : '登录' }}
+        </button>
+        <button class="switch-btn" type="button" @click="switchToRegister">去注册</button>
+      </div>
+
+      <div v-else class="form">
+        <div class="field">
+          <div class="label">用户名</div>
+          <input v-model="registerForm.username" class="field-input" placeholder="请输入用户名" />
+        </div>
+        <div class="field">
+          <div class="label">邮箱</div>
+          <input v-model="registerForm.email" class="field-input" placeholder="请输入邮箱" />
+        </div>
+        <div class="field">
+          <div class="label">密码</div>
+          <input v-model="registerForm.password" class="field-input" type="password" placeholder="请输入密码" />
+        </div>
+        <div class="field">
+          <div class="label">确认密码</div>
+          <input
+            v-model="registerForm.confirmPassword"
+            class="field-input"
+            type="password"
+            placeholder="请再次输入密码"
+          />
+        </div>
+
+        <div class="form-error" v-if="formError">{{ formError }}</div>
+
+        <button class="submit-btn" type="button" :disabled="submitting" @click="submitRegister">
+          {{ submitting ? '注册中...' : '注册' }}
+        </button>
+        <button class="switch-btn" type="button" @click="switchToLogin">去登录</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -230,6 +439,16 @@ function onHeaderSearchEnter() {
   height: 34px;
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.user-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .avatar {
@@ -244,7 +463,7 @@ function onHeaderSearchEnter() {
 .user-menu {
   position: absolute;
   right: 0;
-  top: 42px;
+  top: 36px;
   display: none;
 }
 
@@ -254,11 +473,25 @@ function onHeaderSearchEnter() {
 
 .menu-card {
   width: 220px;
-  height: 160px;
+  padding: 10px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow);
+}
+
+.menu-btn {
+  width: 100%;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menu-btn:hover {
+  border-color: var(--accent);
 }
 
 .main {
@@ -313,5 +546,104 @@ function onHeaderSearchEnter() {
   height: 68px;
   background: var(--panel);
   border-top: 1px solid var(--border);
+}
+
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 50%, transparent);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.modal {
+  width: 420px;
+  max-width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.modal-title {
+  font-weight: 700;
+}
+
+.modal-close {
+  height: 34px;
+  width: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field .label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field-input {
+  width: 100%;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 12px;
+  outline: none;
+}
+
+.form-error {
+  color: #d44;
+  font-size: 12px;
+}
+
+.submit-btn {
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.switch-btn {
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.switch-btn:hover {
+  border-color: var(--accent);
 }
 </style>
