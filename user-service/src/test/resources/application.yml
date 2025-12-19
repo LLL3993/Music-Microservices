@@ -11,3 +11,9 @@ spring:
     properties:
       hibernate:
         globally_quoted_identifiers: true
+
+security:
+  jwt:
+    secret: music-microservices-dev-jwt-secret-please-change-32bytes
+    issuer: music-microservices
+    expiration-seconds: 86400

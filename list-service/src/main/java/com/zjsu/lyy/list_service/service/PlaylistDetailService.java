@@ -33,19 +33,19 @@ public class PlaylistDetailService {
 	}
 
 	@Transactional
-	public PlaylistDetailResponse createDetail(CreatePlaylistDetailRequest request) {
-		userClient.assertUserExists(request.username());
+	public PlaylistDetailResponse createDetail(String username, CreatePlaylistDetailRequest request) {
+		userClient.assertUserExists(username);
 		metaClient.assertSongExists(request.songName());
-		playlistService.getPlaylistEntityByUsernameAndName(request.username(), request.playlistName());
+		playlistService.getPlaylistEntityByUsernameAndName(username, request.playlistName());
 
 		if (playlistDetailRepository.existsByUsernameAndPlaylistNameAndSongName(
-				request.username(), request.playlistName(), request.songName()
+				username, request.playlistName(), request.songName()
 		)) {
 			throw new ConflictException("歌曲已在歌单中");
 		}
 
 		PlaylistDetail detail = new PlaylistDetail();
-		detail.setUsername(request.username());
+		detail.setUsername(username);
 		detail.setPlaylistName(request.playlistName());
 		detail.setSongName(request.songName());
 

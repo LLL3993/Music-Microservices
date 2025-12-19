@@ -27,15 +27,15 @@ public class PlaylistService {
 	}
 
 	@Transactional
-	public PlaylistResponse createPlaylist(CreatePlaylistRequest request) {
-		userClient.assertUserExists(request.username());
+	public PlaylistResponse createPlaylist(String username, CreatePlaylistRequest request) {
+		userClient.assertUserExists(username);
 
-		if (playlistRepository.existsByUsernameAndPlaylistName(request.username(), request.playlistName())) {
+		if (playlistRepository.existsByUsernameAndPlaylistName(username, request.playlistName())) {
 			throw new ConflictException("歌单已存在");
 		}
 
 		Playlist playlist = new Playlist();
-		playlist.setUsername(request.username());
+		playlist.setUsername(username);
 		playlist.setPlaylistName(request.playlistName());
 		playlist.setDescription(request.description());
 		playlist.setPublic(request.isPublic() == null || request.isPublic());

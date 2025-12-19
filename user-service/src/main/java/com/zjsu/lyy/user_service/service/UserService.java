@@ -9,14 +9,17 @@ import com.zjsu.lyy.user_service.exception.NotFoundException;
 import com.zjsu.lyy.user_service.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Service
 public class UserService {
 
 	private final UserRepository userRepository;
+	private final PasswordEncoder passwordEncoder;
 
-	public UserService(UserRepository userRepository) {
+	public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
 		this.userRepository = userRepository;
+		this.passwordEncoder = passwordEncoder;
 	}
 
 	@Transactional
@@ -31,7 +34,7 @@ public class UserService {
 		User user = new User();
 		user.setUsername(request.username());
 		user.setEmail(request.email());
-		user.setPassword(request.password());
+		user.setPassword(passwordEncoder.encode(request.password()));
 		user.setAdmin(Boolean.TRUE.equals(request.isAdmin()));
 
 		User saved = userRepository.save(user);

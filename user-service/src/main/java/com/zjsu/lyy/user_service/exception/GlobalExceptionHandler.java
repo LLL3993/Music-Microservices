@@ -24,6 +24,12 @@ public class GlobalExceptionHandler {
 				.body(new ApiError(Instant.now(), HttpStatus.CONFLICT.value(), ex.getMessage(), request.getRequestURI()));
 	}
 
+	@ExceptionHandler(UnauthorizedException.class)
+	public ResponseEntity<ApiError> handleUnauthorized(UnauthorizedException ex, HttpServletRequest request) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+				.body(new ApiError(Instant.now(), HttpStatus.UNAUTHORIZED.value(), ex.getMessage(), request.getRequestURI()));
+	}
+
 	@ExceptionHandler(DataIntegrityViolationException.class)
 	public ResponseEntity<ApiError> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
 		return ResponseEntity.status(HttpStatus.CONFLICT)

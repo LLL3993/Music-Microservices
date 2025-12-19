@@ -26,16 +26,16 @@ public class FavoriteService {
 	}
 
 	@Transactional
-	public FavoriteResponse createFavorite(CreateFavoriteRequest request) {
-		userClient.assertUserExists(request.username());
+	public FavoriteResponse createFavorite(String username, CreateFavoriteRequest request) {
+		userClient.assertUserExists(username);
 		metaClient.assertSongExists(request.songName());
 
-		if (favoriteRepository.existsByUsernameAndSongName(request.username(), request.songName())) {
+		if (favoriteRepository.existsByUsernameAndSongName(username, request.songName())) {
 			throw new ConflictException("收藏已存在");
 		}
 
 		Favorite favorite = new Favorite();
-		favorite.setUsername(request.username());
+		favorite.setUsername(username);
 		favorite.setSongName(request.songName());
 
 		Favorite saved = favoriteRepository.save(favorite);

@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,13 +28,19 @@ public class PlaylistDetailController {
 	}
 
 	@PostMapping
-	public ResponseEntity<PlaylistDetailResponse> createDetail(@Valid @RequestBody CreatePlaylistDetailRequest request) {
-		PlaylistDetailResponse created = playlistDetailService.createDetail(request);
+	public ResponseEntity<PlaylistDetailResponse> createDetail(
+			@RequestHeader("X-Username") String username,
+			@Valid @RequestBody CreatePlaylistDetailRequest request
+	) {
+		PlaylistDetailResponse created = playlistDetailService.createDetail(username, request);
 		return ResponseEntity.status(HttpStatus.CREATED).body(created);
 	}
 
 	@GetMapping
-	public List<PlaylistDetailResponse> listDetailsQuery(@RequestParam String username, @RequestParam String playlistName) {
+	public List<PlaylistDetailResponse> listDetailsQuery(
+			@RequestHeader("X-Username") String username,
+			@RequestParam String playlistName
+	) {
 		return playlistDetailService.listDetails(username, playlistName);
 	}
 
