@@ -27,6 +27,8 @@ const notice = ref('')
 const playlists = ref([])
 const playlistsLoaded = ref(false)
 const selectedPlaylistByKey = ref({})
+const favoritesLoaded = ref(false)
+const favoriteIdBySongName = ref({})
 
 watch(
   () => route.query.q,
@@ -58,7 +60,24 @@ function selectHotTag(tag) {
   onEnter()
 }
 
-function goPlayer(songName) {
+function dispatchPlayerSet(songName, artist) {
+  const queue = results.value.map((x) => x?.songName).filter((x) => typeof x === 'string' && x.trim())
+  const index = queue.findIndex((x) => x === songName)
+  window.dispatchEvent(
+    new CustomEvent('player:set', {
+      detail: {
+        songName,
+        artist: typeof artist === 'string' ? artist : '',
+        queue,
+        index: index >= 0 ? index : 0,
+        isPlaying: true,
+      },
+    }),
+  )
+}
+
+function goPlayer(songName, artist) {
+  dispatchPlayerSet(songName, artist)
   router.push(`/player?name=${encodeURIComponent(songName)}`)
 }
 
@@ -81,6 +100,31 @@ async function loadPlaylists() {
   }
 }
 
+async function loadFavorites() {
+  const authToken = getAuthToken()
+  if (!authToken) {
+    favoriteIdBySongName.value = {}
+    favoritesLoaded.value = false
+    return
+  }
+
+  try {
+    const headers = { Authorization: `Bearer ${authToken}` }
+    const { data } = await axios.get(`${apiBase}/api/favorites/username`, { headers })
+    const arr = Array.isArray(data) ? data : []
+    const map = {}
+    for (const f of arr) {
+      if (!f || !f.songName) continue
+      map[f.songName] = f.id
+    }
+    favoriteIdBySongName.value = map
+    favoritesLoaded.value = true
+  } catch {
+    favoriteIdBySongName.value = {}
+    favoritesLoaded.value = false
+  }
+}
+
 function setNotice(value) {
   notice.value = value
   if (!value) return
@@ -89,7 +133,11 @@ function setNotice(value) {
   }, 1800)
 }
 
-async function favoriteSong(songName) {
+function isFavorited(songName) {
+  return Boolean(favoriteIdBySongName.value?.[songName])
+}
+
+async function toggleFavorite(songName) {
   const authToken = getAuthToken()
   if (!authToken) {
     setNotice('请先登录')
@@ -97,12 +145,21 @@ async function favoriteSong(songName) {
   }
   try {
     const headers = { Authorization: `Bearer ${authToken}` }
-    await axios.post(
-      `${apiBase}/api/favorites`,
-      { songName },
-      { headers },
-    )
-    setNotice('已收藏')
+    const existingId = favoriteIdBySongName.value?.[songName]
+    if (existingId) {
+      await axios.delete(`${apiBase}/api/favorites/${existingId}`, { headers })
+      const next = { ...(favoriteIdBySongName.value || {}) }
+      delete next[songName]
+      favoriteIdBySongName.value = next
+      setNotice('已取消收藏')
+    } else {
+      const { data } = await axios.post(`${apiBase}/api/favorites`, { songName }, { headers })
+      const id = data?.id
+      if (id != null) {
+        favoriteIdBySongName.value = { ...(favoriteIdBySongName.value || {}), [songName]: id }
+      }
+      setNotice('已收藏')
+    }
   } catch (err) {
     setNotice(pickErrorMessage(err))
   }
@@ -155,6 +212,7 @@ async function doSearch() {
   try {
     const headers = { Authorization: `Bearer ${authToken}` }
     if (!playlistsLoaded.value) await loadPlaylists()
+    if (!favoritesLoaded.value) await loadFavorites()
     const [songResp, artistResp] = await Promise.all([
       axios.get(`${apiBase}/api/meta/song-name-like`, {
         params: { songName: key },
@@ -237,7 +295,23 @@ async function doSearch() {
             <div class="artist">{{ s.artist }}</div>
           </div>
           <div class="actions">
-            <button class="action-btn" type="button" @click="favoriteSong(s.songName)">收藏</button>
+            <button class="icon-action fav" type="button" @click="toggleFavorite(s.songName)">
+              <svg v-if="isFavorited(s.songName)" width="18" height="18" viewBox="0 0 24 24">
+                <path
+                  d="M12 21s-7-4.4-9.5-8.3C.5 9.4 2.2 6 6 6c2.1 0 3.4 1.2 4 2 0.6-0.8 1.9-2 4-2 3.8 0 5.5 3.4 3.5 6.7C19 16.6 12 21 12 21Z"
+                  fill="currentColor"
+                />
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 20s-7-4.2-9.1-7.8C1 9.2 2.7 6 6.2 6c2 0 3.2 1.1 3.8 1.9C10.6 7.1 11.8 6 13.8 6c3.5 0 5.2 3.2 3.3 6.2C19 15.8 12 20 12 20Z"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
             <div class="add-row">
               <select
                 class="select"
@@ -253,7 +327,7 @@ async function doSearch() {
                 加入
               </button>
             </div>
-            <button class="play" type="button" @click="goPlayer(s.songName)">
+            <button class="play" type="button" @click="goPlayer(s.songName, s.artist)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
               </svg>
@@ -403,6 +477,24 @@ async function doSearch() {
 
 .play:hover {
   border-color: var(--accent);
+}
+
+.icon-action {
+  height: 36px;
+  width: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.icon-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .actions {

@@ -23,7 +23,35 @@ function getAuthHeader() {
   return { Authorization: `Bearer ${token}` }
 }
 
-function goPlayer(songName) {
+async function getArtistBySongName(songName) {
+  const headers = getAuthHeader()
+  if (!headers) return ''
+  try {
+    const { data } = await axios.get(`${apiBase}/api/meta/song-name`, {
+      params: { songName },
+      headers,
+    })
+    return typeof data?.artist === 'string' ? data.artist : ''
+  } catch {
+    return ''
+  }
+}
+
+async function goPlayer(songName) {
+  const queue = items.value.map((x) => x?.songName).filter((x) => typeof x === 'string' && x.trim())
+  const index = queue.findIndex((x) => x === songName)
+  const artist = await getArtistBySongName(songName)
+  window.dispatchEvent(
+    new CustomEvent('player:set', {
+      detail: {
+        songName,
+        artist,
+        queue,
+        index: index >= 0 ? index : 0,
+        isPlaying: true,
+      },
+    }),
+  )
   router.push(`/player?name=${encodeURIComponent(songName)}`)
 }
 
@@ -70,7 +98,11 @@ onMounted(loadFavorites)
           <div class="meta">
             <div class="name">{{ f.songName }}</div>
           </div>
-          <button class="play" type="button" @click="goPlayer(f.songName)">播放</button>
+          <button class="play" type="button" @click="goPlayer(f.songName)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -154,17 +186,18 @@ onMounted(loadFavorites)
 
 .play {
   height: 36px;
-  padding: 0 12px;
+  width: 36px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--accent);
   cursor: pointer;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .play:hover {
   border-color: var(--accent);
 }
 </style>
-

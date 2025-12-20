@@ -20,9 +20,9 @@ const router = createRouter({
         { path: 'search', name: 'Search', component: Search },
         { path: 'favorites', name: 'Favorites', component: Favorites },
         { path: 'playlists', name: 'Playlists', component: Playlists },
+        { path: 'player', name: 'Player', component: Player },
       ],
     },
-    { path: '/player', name: 'Player', component: Player },
     { path: '/:pathMatch(.*)*', name: 'Empty', component: Empty },
   ],
 })

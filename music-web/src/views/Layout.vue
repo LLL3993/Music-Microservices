@@ -1,6 +1,6 @@
 <script setup>
 import axios from 'axios'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -48,6 +48,284 @@ const registerForm = ref({
   confirmPassword: '',
 })
 
+function baseUrl() {
+  const b = import.meta.env.BASE_URL
+  return typeof b === 'string' && b ? b : '/'
+}
+
+function musicUrlBySong(song) {
+  if (!song) return ''
+  return `${baseUrl()}data/music/${encodeURIComponent(song)}.mp3`
+}
+
+function lrcUrlBySong(song) {
+  if (!song) return ''
+  return `${baseUrl()}data/lrc/${encodeURIComponent(song)}.lrc`
+}
+
+function coverUrlBySong(song) {
+  if (!song) return ''
+  return `${baseUrl()}data/cover/${encodeURIComponent(song)}.jpg`
+}
+
+function safeParsePlayerState(raw) {
+  const parsed = safeParseJson(raw || '')
+  if (!parsed || typeof parsed !== 'object') return null
+  return parsed
+}
+
+const playerState = ref({
+  songName: '',
+  artist: '',
+  isPlaying: false,
+  currentTime: 0,
+  duration: 0,
+  audioUrl: '',
+  lrcUrl: '',
+  coverUrl: '',
+  queue: [],
+  index: 0,
+})
+
+const audioEl = ref(null)
+
+const lyricLoading = ref(false)
+const lyricError = ref('')
+const lyricItems = ref([])
+const lyricActiveLine = ref(0)
+
+const favoriteIdBySongName = ref({})
+
+const activeLyricItem = computed(() => {
+  const arr = lyricItems.value
+  if (!Array.isArray(arr) || !arr.length) return null
+  const idx = lyricActiveLine.value
+  if (!Number.isFinite(idx) || idx < 0 || idx >= arr.length) return arr[0]
+  return arr[idx]
+})
+
+const isSeeking = ref(false)
+const seekingTime = ref(0)
+
+function clamp(num, min, max) {
+  if (!Number.isFinite(num)) return min
+  return Math.min(max, Math.max(min, num))
+}
+
+function formatTime(sec) {
+  const s = Number.isFinite(sec) ? sec : 0
+  const total = Math.max(0, Math.floor(s))
+  const mm = String(Math.floor(total / 60)).padStart(2, '0')
+  const ss = String(total % 60).padStart(2, '0')
+  return `${mm}:${ss}`
+}
+
+function applyAudioSource(song, resetTime) {
+  if (!audioEl.value) return
+  const src = musicUrlBySong(song)
+  if (!src) return
+
+  const currentSrc = audioEl.value.getAttribute('src') || ''
+  if (currentSrc !== src) {
+    audioEl.value.setAttribute('src', src)
+    audioEl.value.load()
+  }
+
+  if (resetTime) {
+    audioEl.value.currentTime = 0
+    playerState.value.currentTime = 0
+  }
+}
+
+function parseLrc(text) {
+  const out = []
+  const lines = String(text || '').split(/\r?\n/)
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) continue
+
+    const tagMatches = Array.from(line.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g))
+    if (!tagMatches.length) continue
+
+    const textPart = line.replace(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g, '').trim()
+    for (const m of tagMatches) {
+      const mm = Number(m[1])
+      const ss = Number(m[2])
+      const frac = m[3] ? Number(String(m[3]).padEnd(3, '0')) : 0
+      if (!Number.isFinite(mm) || !Number.isFinite(ss) || !Number.isFinite(frac)) continue
+      const t = mm * 60 + ss + frac / 1000
+      out.push({ time: t, text: textPart })
+    }
+  }
+  out.sort((a, b) => a.time - b.time)
+  return out
+}
+
+async function loadLyrics(song) {
+  lyricLoading.value = true
+  lyricError.value = ''
+  lyricItems.value = []
+  lyricActiveLine.value = 0
+  try {
+    const resp = await fetch(lrcUrlBySong(song))
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const text = await resp.text()
+    const parsed = parseLrc(text)
+    lyricItems.value = parsed.length ? parsed : [{ time: 0, text: '暂无歌词' }]
+  } catch {
+    lyricError.value = '歌词加载失败'
+    lyricItems.value = [{ time: 0, text: '暂无歌词' }]
+  } finally {
+    lyricLoading.value = false
+  }
+}
+
+function persistPlayerState() {
+  localStorage.setItem('player_state', JSON.stringify(playerState.value))
+}
+
+function emitPlayerState() {
+  window.dispatchEvent(new CustomEvent('player:state', { detail: playerState.value }))
+}
+
+async function getArtistBySongName(songName) {
+  if (!songName) return ''
+  if (!token.value) return ''
+  try {
+    const headers = { Authorization: `Bearer ${token.value}` }
+    const { data } = await axios.get(`${apiBase}/api/meta/song-name`, {
+      params: { songName },
+      headers,
+    })
+    return typeof data?.artist === 'string' ? data.artist : ''
+  } catch {
+    return ''
+  }
+}
+
+async function resolveArtistIfMissing(songName) {
+  if (!songName) return
+  if (playerState.value.songName !== songName) return
+  if (typeof playerState.value.artist === 'string' && playerState.value.artist.trim()) return
+  const artist = await getArtistBySongName(songName)
+  if (!artist) return
+  if (playerState.value.songName !== songName) return
+  if (typeof playerState.value.artist === 'string' && playerState.value.artist.trim()) return
+  playerState.value.artist = artist
+  persistPlayerState()
+  emitPlayerState()
+}
+
+function setPlayerState(next) {
+  const nextSongName = typeof next?.songName === 'string' ? next.songName : ''
+  const nextArtist = typeof next?.artist === 'string' ? next.artist : ''
+  const audioUrl = musicUrlBySong(nextSongName)
+  const lrcUrl = lrcUrlBySong(nextSongName)
+  const coverUrl = coverUrlBySong(nextSongName)
+
+  playerState.value = {
+    songName: nextSongName,
+    artist: nextArtist,
+    isPlaying: Boolean(next?.isPlaying),
+    currentTime: Number.isFinite(next?.currentTime) ? next.currentTime : 0,
+    duration: Number.isFinite(next?.duration) ? next.duration : 0,
+    audioUrl,
+    lrcUrl,
+    coverUrl,
+    queue: Array.isArray(next?.queue) ? next.queue.filter((x) => typeof x === 'string') : [],
+    index: Number.isFinite(next?.index) ? next.index : 0,
+  }
+  persistPlayerState()
+  emitPlayerState()
+}
+
+function ensureQueueIndex() {
+  if (!playerState.value.queue.length) return
+  const idx = playerState.value.queue.findIndex((s) => s === playerState.value.songName)
+  if (idx >= 0) playerState.value.index = idx
+}
+
+function openPlayer() {
+  if (!playerState.value.songName) return
+  router.push(`/player?name=${encodeURIComponent(playerState.value.songName)}`)
+}
+
+function startPlayback() {
+  if (!audioEl.value || !playerState.value.songName) return
+  applyAudioSource(playerState.value.songName, false)
+
+  const p = audioEl.value.play()
+  if (p && typeof p.then === 'function') {
+    p.then(() => {
+      playerState.value.isPlaying = true
+      persistPlayerState()
+      emitPlayerState()
+    }).catch(() => {
+      playerState.value.isPlaying = false
+      persistPlayerState()
+      emitPlayerState()
+    })
+  } else {
+    playerState.value.isPlaying = true
+    persistPlayerState()
+    emitPlayerState()
+  }
+}
+
+function pausePlayback() {
+  if (!audioEl.value) return
+  audioEl.value.pause()
+  playerState.value.isPlaying = false
+  persistPlayerState()
+  emitPlayerState()
+}
+
+function togglePlay() {
+  if (!playerState.value.songName) return
+  if (playerState.value.isPlaying) pausePlayback()
+  else startPlayback()
+}
+
+async function playPrev() {
+  const q = playerState.value.queue
+  if (!q.length) return
+  ensureQueueIndex()
+  const nextIndex = (playerState.value.index - 1 + q.length) % q.length
+  playerState.value.index = nextIndex
+  playerState.value.songName = q[nextIndex]
+  playerState.value.isPlaying = true
+  playerState.value.currentTime = 0
+  playerState.value.audioUrl = musicUrlBySong(playerState.value.songName)
+  playerState.value.lrcUrl = lrcUrlBySong(playerState.value.songName)
+  playerState.value.coverUrl = coverUrlBySong(playerState.value.songName)
+  persistPlayerState()
+  emitPlayerState()
+  loadLyrics(playerState.value.songName)
+  openPlayer()
+  applyAudioSource(playerState.value.songName, true)
+  startPlayback()
+}
+
+async function playNext() {
+  const q = playerState.value.queue
+  if (!q.length) return
+  ensureQueueIndex()
+  const nextIndex = (playerState.value.index + 1) % q.length
+  playerState.value.index = nextIndex
+  playerState.value.songName = q[nextIndex]
+  playerState.value.isPlaying = true
+  playerState.value.currentTime = 0
+  playerState.value.audioUrl = musicUrlBySong(playerState.value.songName)
+  playerState.value.lrcUrl = lrcUrlBySong(playerState.value.songName)
+  playerState.value.coverUrl = coverUrlBySong(playerState.value.songName)
+  persistPlayerState()
+  emitPlayerState()
+  loadLyrics(playerState.value.songName)
+  openPlayer()
+  applyAudioSource(playerState.value.songName, true)
+  startPlayback()
+}
+
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
   document.documentElement.setAttribute('data-theme', theme.value)
@@ -93,6 +371,7 @@ function saveAuth(authToken, authUser) {
   user.value = authUser || null
   localStorage.setItem('auth_token', token.value)
   localStorage.setItem('auth_user', JSON.stringify(user.value))
+  loadFavorites()
 }
 
 function logout() {
@@ -100,6 +379,7 @@ function logout() {
   user.value = null
   localStorage.removeItem('auth_token')
   localStorage.removeItem('auth_user')
+  loadFavorites()
 }
 
 function pickErrorMessage(err) {
@@ -163,6 +443,224 @@ async function submitRegister() {
     submitting.value = false
   }
 }
+
+function onPlayerSet(e) {
+  const detail = e?.detail || {}
+  const songName = typeof detail.songName === 'string' ? detail.songName : ''
+  const artist = typeof detail.artist === 'string' ? detail.artist : ''
+  const queue = Array.isArray(detail.queue) ? detail.queue : []
+  const index = Number.isFinite(detail.index) ? detail.index : 0
+  const shouldPlay = typeof detail.isPlaying === 'boolean' ? detail.isPlaying : true
+
+  setPlayerState({
+    songName,
+    artist,
+    queue,
+    index,
+    currentTime: 0,
+    isPlaying: shouldPlay,
+  })
+
+  applyAudioSource(songName, true)
+  if (songName) loadLyrics(songName)
+  if (songName && !artist) resolveArtistIfMissing(songName)
+  if (shouldPlay) startPlayback()
+  else pausePlayback()
+}
+
+function onPlayerToggle() {
+  togglePlay()
+}
+
+function onPlayerPrev() {
+  playPrev()
+}
+
+function onPlayerNext() {
+  playNext()
+}
+
+function seekTo(time, options) {
+  if (!audioEl.value) return
+  if (!Number.isFinite(time)) return
+  const nextTime = clamp(
+    time,
+    0,
+    Number.isFinite(playerState.value.duration) ? playerState.value.duration : 0,
+  )
+  audioEl.value.currentTime = nextTime
+  playerState.value.currentTime = nextTime
+  const shouldPersist = options?.persist !== false
+  if (shouldPersist) persistPlayerState()
+  emitPlayerState()
+}
+
+function onPlayerSeek(e) {
+  seekTo(e?.detail?.time, { persist: e?.detail?.persist })
+}
+
+let lastPersistSecond = -1
+
+function onAudioLoadedMetadata() {
+  if (!audioEl.value) return
+  const d = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0
+  playerState.value.duration = d
+  persistPlayerState()
+  emitPlayerState()
+}
+
+function onAudioTimeUpdate() {
+  if (!audioEl.value) return
+  const t = Number.isFinite(audioEl.value.currentTime) ? audioEl.value.currentTime : 0
+  const d = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0
+  if (!isSeeking.value) playerState.value.currentTime = t
+  playerState.value.duration = d
+  emitPlayerState()
+
+  const arr = lyricItems.value
+  if (arr.length) {
+    let idx = 0
+    for (let i = 0; i < arr.length; i += 1) {
+      if (arr[i].time <= t + 0.05) idx = i
+      else break
+    }
+    if (idx !== lyricActiveLine.value) {
+      lyricActiveLine.value = idx
+    }
+  }
+
+  const sec = Math.floor(t)
+  if (sec !== lastPersistSecond) {
+    lastPersistSecond = sec
+    persistPlayerState()
+  }
+}
+
+function onAudioEnded() {
+  if (playerState.value.queue.length) {
+    playNext()
+    return
+  }
+  pausePlayback()
+}
+
+function onAudioError() {
+  playerState.value.isPlaying = false
+  playerState.value.duration = 0
+  persistPlayerState()
+  emitPlayerState()
+}
+
+function isFavorited(songName) {
+  return Boolean(favoriteIdBySongName.value?.[songName])
+}
+
+async function loadFavorites() {
+  if (!token.value) {
+    favoriteIdBySongName.value = {}
+    return
+  }
+  try {
+    const headers = { Authorization: `Bearer ${token.value}` }
+    const { data } = await axios.get(`${apiBase}/api/favorites/username`, { headers })
+    const arr = Array.isArray(data) ? data : []
+    const map = {}
+    for (const f of arr) {
+      if (!f || !f.songName) continue
+      map[f.songName] = f.id
+    }
+    favoriteIdBySongName.value = map
+  } catch {
+    favoriteIdBySongName.value = {}
+  }
+}
+
+async function toggleFavorite(songName) {
+  if (!songName) return
+  if (!token.value) return
+  try {
+    const headers = { Authorization: `Bearer ${token.value}` }
+    const existingId = favoriteIdBySongName.value?.[songName]
+    if (existingId) {
+      await axios.delete(`${apiBase}/api/favorites/${existingId}`, { headers })
+      const next = { ...(favoriteIdBySongName.value || {}) }
+      delete next[songName]
+      favoriteIdBySongName.value = next
+    } else {
+      const { data } = await axios.post(`${apiBase}/api/favorites`, { songName }, { headers })
+      const id = data?.id
+      if (id != null) {
+        favoriteIdBySongName.value = { ...(favoriteIdBySongName.value || {}), [songName]: id }
+      }
+    }
+  } catch {}
+}
+
+function onProgressDown() {
+  isSeeking.value = true
+  seekingTime.value = Number.isFinite(playerState.value.currentTime) ? playerState.value.currentTime : 0
+}
+
+function onProgressInput(e) {
+  const raw = Number(e?.target?.value)
+  if (!Number.isFinite(raw)) return
+  const nextTime = clamp(
+    raw,
+    0,
+    Number.isFinite(playerState.value.duration) ? playerState.value.duration : 0,
+  )
+  seekingTime.value = nextTime
+  seekTo(nextTime, { persist: false })
+}
+
+function onProgressUp() {
+  if (!isSeeking.value) return
+  isSeeking.value = false
+  seekTo(seekingTime.value)
+}
+
+function onCurrentLyricClick() {
+  const item = activeLyricItem.value
+  if (!item) return
+  if (!Number.isFinite(item.time)) return
+  if (!playerState.value.songName) return
+  if (lyricLoading.value) return
+  if (lyricError.value) return
+  seekTo(item.time)
+}
+
+onMounted(() => {
+  const saved = safeParsePlayerState(localStorage.getItem('player_state') || '')
+  if (saved) {
+    setPlayerState({
+      ...playerState.value,
+      ...saved,
+      isPlaying: Boolean(saved.isPlaying),
+    })
+  } else {
+    emitPlayerState()
+  }
+
+  window.addEventListener('player:set', onPlayerSet)
+  window.addEventListener('player:toggle', onPlayerToggle)
+  window.addEventListener('player:prev', onPlayerPrev)
+  window.addEventListener('player:next', onPlayerNext)
+  window.addEventListener('player:seek', onPlayerSeek)
+
+  if (playerState.value.songName) {
+    loadLyrics(playerState.value.songName)
+    if (!playerState.value.artist) resolveArtistIfMissing(playerState.value.songName)
+  }
+  loadFavorites()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('player:set', onPlayerSet)
+  window.removeEventListener('player:toggle', onPlayerToggle)
+  window.removeEventListener('player:prev', onPlayerPrev)
+  window.removeEventListener('player:next', onPlayerNext)
+  window.removeEventListener('player:seek', onPlayerSeek)
+})
 </script>
 
 <template>
@@ -272,7 +770,148 @@ async function submitRegister() {
       </section>
     </div>
 
-    <footer class="playerbar"></footer>
+    <footer class="playerbar">
+      <div class="playerbar-inner">
+        <div class="playerbar-left" @click="openPlayer">
+          <img
+            class="playerbar-cover"
+            :src="
+              playerState.coverUrl ||
+              'https://dummyimage.com/200x200/999999/ff4400.png&text=MUSIC'
+            "
+            alt="cover"
+          />
+          <div class="playerbar-meta">
+            <div class="playerbar-title">
+              {{ playerState.songName || '未选择歌曲' }}
+            </div>
+            <div class="playerbar-sub">
+              {{ playerState.artist || (playerState.songName ? '歌手加载中...' : '点击任意播放按钮开始') }}
+            </div>
+          </div>
+        </div>
+
+        <div class="playerbar-controls">
+          <div
+            class="playerbar-current-lyric"
+            :class="{ disabled: !playerState.songName || lyricLoading || lyricError }"
+            @click="onCurrentLyricClick"
+          >
+            <span v-if="!playerState.songName">未选择歌曲</span>
+            <span v-else-if="lyricLoading">歌词加载中...</span>
+            <span v-else-if="lyricError">{{ lyricError }}</span>
+            <span v-else>{{ activeLyricItem?.text || '暂无歌词' }}</span>
+          </div>
+
+          <div class="playerbar-buttons">
+            <button
+              class="playerbar-btn"
+              type="button"
+              :disabled="!playerState.queue.length"
+              @click="playPrev"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6 6v12M18 6l-8.5 6L18 18V6Z"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+
+            <button
+              class="playerbar-btn primary"
+              type="button"
+              :disabled="!playerState.songName"
+              @click="togglePlay"
+            >
+              <svg v-if="playerState.isPlaying" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
+              </svg>
+            </button>
+
+            <button
+              class="playerbar-btn"
+              type="button"
+              :disabled="!playerState.queue.length"
+              @click="playNext"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M18 6v12M6 6l8.5 6L6 18V6Z"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+
+            <button
+              class="playerbar-btn"
+              type="button"
+              :disabled="!playerState.songName || !isAuthed"
+              :class="{ active: isFavorited(playerState.songName) }"
+              @click="toggleFavorite(playerState.songName)"
+            >
+              <svg v-if="isFavorited(playerState.songName)" width="18" height="18" viewBox="0 0 24 24">
+                <path
+                  d="M12 21s-7-4.4-9.5-8.3C.5 9.4 2.2 6 6 6c2.1 0 3.4 1.2 4 2 0.6-0.8 1.9-2 4-2 3.8 0 5.5 3.4 3.5 6.7C19 16.6 12 21 12 21Z"
+                  fill="currentColor"
+                />
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 20s-7-4.2-9.1-7.8C1 9.2 2.7 6 6.2 6c2 0 3.2 1.1 3.8 1.9C10.6 7.1 11.8 6 13.8 6c3.5 0 5.2 3.2 3.3 6.2C19 15.8 12 20 12 20Z"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="playerbar-right">
+          <div class="playerbar-progress">
+            <input
+              class="playerbar-range"
+              type="range"
+              min="0"
+              :max="playerState.duration || 0"
+              step="0.01"
+              :value="isSeeking ? seekingTime : playerState.currentTime || 0"
+              :disabled="!playerState.songName || !playerState.duration"
+              @pointerdown="onProgressDown"
+              @pointerup="onProgressUp"
+              @pointercancel="onProgressUp"
+              @change="onProgressUp"
+              @input="onProgressInput"
+            />
+            <div class="playerbar-time">
+              <span>{{ formatTime(playerState.currentTime) }}</span>
+              <span>{{ formatTime(playerState.duration) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <audio
+        ref="audioEl"
+        class="playerbar-audio"
+        :src="playerState.audioUrl"
+        @loadedmetadata="onAudioLoadedMetadata"
+        @timeupdate="onAudioTimeUpdate"
+        @ended="onAudioEnded"
+        @error="onAudioError"
+      ></audio>
+    </footer>
   </div>
 
   <div v-if="authOpen" class="modal-mask">
@@ -463,7 +1102,7 @@ async function submitRegister() {
 .user-menu {
   position: absolute;
   right: 0;
-  top: 36px;
+  top: 32px;
   display: none;
 }
 
@@ -543,9 +1182,174 @@ async function submitRegister() {
 }
 
 .playerbar {
-  height: 68px;
+  height: 140px;
   background: var(--panel);
   border-top: 1px solid var(--border);
+}
+
+.playerbar-inner {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(280px, 1fr);
+  align-items: stretch;
+  gap: 14px;
+  padding: 0 18px;
+}
+
+.playerbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.playerbar-cover {
+  height: 44px;
+  width: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  flex: none;
+}
+
+.playerbar-meta {
+  min-width: 0;
+}
+
+.playerbar-title {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playerbar-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playerbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.playerbar-current-lyric {
+  height: 40px;
+  width: 300px;
+  max-width: 34vw;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+}
+
+.playerbar-current-lyric.disabled {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.playerbar-current-lyric:not(.disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.playerbar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.playerbar-btn {
+  height: 40px;
+  width: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.playerbar-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.playerbar-btn.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+
+.playerbar-btn.active {
+  color: var(--accent);
+}
+
+.playerbar-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.playerbar-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.playerbar-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+}
+
+.playerbar-range {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.playerbar-time {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.playerbar-audio {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .playerbar-inner {
+    grid-template-columns: 1fr auto;
+  }
+  .playerbar-progress {
+    display: none;
+  }
+  .playerbar-current-lyric {
+    display: none;
+  }
 }
 
 .modal-mask {

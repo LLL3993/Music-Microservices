@@ -16,6 +16,14 @@ const detailError = ref('')
 const selectedPlaylist = ref(null)
 const details = ref([])
 
+const createOpen = ref(false)
+const createSubmitting = ref(false)
+const createError = ref('')
+const createForm = ref({
+  playlistName: '',
+  description: '',
+})
+
 function pickErrorMessage(err) {
   const message = err?.response?.data?.message
   if (typeof message === 'string' && message.trim()) return message
@@ -28,7 +36,35 @@ function getAuthHeader() {
   return { Authorization: `Bearer ${token}` }
 }
 
-function goPlayer(songName) {
+async function getArtistBySongName(songName) {
+  const headers = getAuthHeader()
+  if (!headers) return ''
+  try {
+    const { data } = await axios.get(`${apiBase}/api/meta/song-name`, {
+      params: { songName },
+      headers,
+    })
+    return typeof data?.artist === 'string' ? data.artist : ''
+  } catch {
+    return ''
+  }
+}
+
+async function goPlayer(songName) {
+  const queue = details.value.map((x) => x?.songName).filter((x) => typeof x === 'string' && x.trim())
+  const index = queue.findIndex((x) => x === songName)
+  const artist = await getArtistBySongName(songName)
+  window.dispatchEvent(
+    new CustomEvent('player:set', {
+      detail: {
+        songName,
+        artist,
+        queue,
+        index: index >= 0 ? index : 0,
+        isPlaying: true,
+      },
+    }),
+  )
   router.push(`/player?name=${encodeURIComponent(songName)}`)
 }
 
@@ -50,6 +86,71 @@ async function loadPlaylists() {
     playlists.value = []
   } finally {
     loading.value = false
+  }
+}
+
+function openCreate() {
+  createOpen.value = true
+  createError.value = ''
+}
+
+function closeCreate() {
+  createOpen.value = false
+  createSubmitting.value = false
+  createError.value = ''
+}
+
+async function submitCreate() {
+  const headers = getAuthHeader()
+  if (!headers) {
+    createError.value = '请先登录后创建歌单'
+    return
+  }
+
+  const playlistName = createForm.value.playlistName.trim()
+  const description = createForm.value.description.trim()
+  if (!playlistName) {
+    createError.value = '歌单名称为必填'
+    return
+  }
+
+  createSubmitting.value = true
+  createError.value = ''
+  try {
+    await axios.post(
+      `${apiBase}/api/playlists`,
+      { playlistName, description, isPublic: true },
+      { headers },
+    )
+    createForm.value.playlistName = ''
+    createForm.value.description = ''
+    closeCreate()
+    await loadPlaylists()
+  } catch (err) {
+    createError.value = pickErrorMessage(err)
+  } finally {
+    createSubmitting.value = false
+  }
+}
+
+async function deletePlaylist(playlist) {
+  const headers = getAuthHeader()
+  if (!headers) {
+    error.value = '请先登录后操作'
+    return
+  }
+
+  const ok = window.confirm(`确认删除歌单「${playlist.playlistName}」吗？`)
+  if (!ok) return
+
+  try {
+    await axios.delete(`${apiBase}/api/playlists/${playlist.id}`, { headers })
+    if (selectedPlaylist.value?.id === playlist.id) {
+      backToList()
+    }
+    await loadPlaylists()
+  } catch (err) {
+    error.value = pickErrorMessage(err)
   }
 }
 
@@ -79,6 +180,22 @@ async function openPlaylist(playlist) {
   }
 }
 
+async function deleteDetail(detail) {
+  const headers = getAuthHeader()
+  if (!headers) {
+    detailError.value = '请先登录后操作'
+    return
+  }
+  const ok = window.confirm(`确认从歌单移除「${detail.songName}」吗？`)
+  if (!ok) return
+  try {
+    await axios.delete(`${apiBase}/api/playlist-details/${detail.id}`, { headers })
+    details.value = details.value.filter((d) => d.id !== detail.id)
+  } catch (err) {
+    detailError.value = pickErrorMessage(err)
+  }
+}
+
 function backToList() {
   selectedPlaylist.value = null
   details.value = []
@@ -93,7 +210,26 @@ onMounted(loadPlaylists)
     <div class="card">
       <div class="head">
         <div class="title">歌单</div>
-        <button class="btn" type="button" @click="loadPlaylists">刷新</button>
+        <div class="head-actions">
+          <button class="btn" type="button" @click="openCreate">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            创建歌单
+          </button>
+          <button class="btn" type="button" @click="loadPlaylists">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M21 12a9 9 0 1 1-2.64-6.36"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+              <path d="M21 3v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            刷新
+          </button>
+        </div>
       </div>
 
       <div class="hint" v-if="loading">加载中...</div>
@@ -103,17 +239,43 @@ onMounted(loadPlaylists)
 
     <div v-if="!loading && !error && !selectedPlaylist && playlists.length" class="card">
       <div class="items">
-        <button v-for="p in playlists" :key="p.id" class="playlist-item" type="button" @click="openPlaylist(p)">
-          <div class="p-title">{{ p.playlistName }}</div>
-          <div class="p-desc">{{ p.description || '无描述' }}</div>
-        </button>
+        <div v-for="p in playlists" :key="p.id" class="playlist-item">
+          <button class="playlist-main" type="button" @click="openPlaylist(p)">
+            <div class="p-title">{{ p.playlistName }}</div>
+            <div class="p-desc">{{ p.description || '无描述' }}</div>
+          </button>
+          <button class="icon-action danger" type="button" @click="deletePlaylist(p)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M3 6h18M9 6V4h6v2m-7 3v11m8-11v11M5 6l1 16h12l1-16"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
 
     <div v-if="selectedPlaylist" class="card">
       <div class="head">
-        <div class="title">歌单：{{ selectedPlaylist.playlistName }}</div>
+        <div class="title">歌单详情</div>
         <button class="btn" type="button" @click="backToList">返回</button>
+      </div>
+
+      <div class="detail-head">
+        <img
+          class="cover"
+          src="https://dummyimage.com/200x200/999999/ff4400.png&text=PLAYLIST"
+          alt="cover"
+        />
+        <div class="info">
+          <div class="name">{{ selectedPlaylist.playlistName }}</div>
+          <div class="creator">创建者：{{ selectedPlaylist.username }}</div>
+          <div class="desc">{{ selectedPlaylist.description || '无描述' }}</div>
+        </div>
       </div>
 
       <div class="hint" v-if="detailLoading">加载中...</div>
@@ -125,8 +287,51 @@ onMounted(loadPlaylists)
           <div class="meta">
             <div class="name">{{ d.songName }}</div>
           </div>
-          <button class="play" type="button" @click="goPlayer(d.songName)">播放</button>
+          <div class="row-actions">
+            <button class="icon-action" type="button" @click="goPlayer(d.songName)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
+              </svg>
+            </button>
+            <button class="icon-action danger" type="button" @click="deleteDetail(d)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M3 6h18M9 6V4h6v2m-7 3v11m8-11v11M5 6l1 16h12l1-16"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="createOpen" class="modal-mask">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">创建歌单</div>
+        <button class="modal-close" type="button" @click="closeCreate">×</button>
+      </div>
+
+      <div class="form">
+        <div class="field">
+          <div class="label">歌单名称</div>
+          <input v-model="createForm.playlistName" class="field-input" placeholder="请输入歌单名称" />
+        </div>
+        <div class="field">
+          <div class="label">描述</div>
+          <input v-model="createForm.description" class="field-input" placeholder="可选" />
+        </div>
+
+        <div class="form-error" v-if="createError">{{ createError }}</div>
+
+        <button class="submit-btn" type="button" :disabled="createSubmitting" @click="submitCreate">
+          {{ createSubmitting ? '创建中...' : '创建' }}
+        </button>
       </div>
     </div>
   </div>
@@ -154,6 +359,12 @@ onMounted(loadPlaylists)
   gap: 12px;
 }
 
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .title {
   font-size: 14px;
   font-weight: 700;
@@ -167,6 +378,9 @@ onMounted(loadPlaylists)
   color: var(--text);
   padding: 0 12px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .btn:hover {
@@ -186,6 +400,13 @@ onMounted(loadPlaylists)
 }
 
 .playlist-item {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.playlist-main {
+  flex: 1;
   text-align: left;
   padding: 12px;
   border-radius: 12px;
@@ -194,7 +415,7 @@ onMounted(loadPlaylists)
   cursor: pointer;
 }
 
-.playlist-item:hover {
+.playlist-main:hover {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
@@ -206,6 +427,71 @@ onMounted(loadPlaylists)
   margin-top: 6px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.icon-action {
+  height: 40px;
+  width: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.icon-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.icon-action.danger:hover {
+  border-color: #d44;
+  color: #d44;
+}
+
+.detail-head {
+  display: flex;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  margin-top: 12px;
+}
+
+.cover {
+  width: 92px;
+  height: 92px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  flex: none;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.info .name {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.creator {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.desc {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .detail-items {
@@ -237,19 +523,95 @@ onMounted(loadPlaylists)
   text-overflow: ellipsis;
 }
 
-.play {
-  height: 36px;
-  padding: 0 12px;
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 50%, transparent);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.modal {
+  width: 420px;
+  max-width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.modal-title {
+  font-weight: 700;
+}
+
+.modal-close {
+  height: 34px;
+  width: 34px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--accent);
+  background: var(--panel);
+  color: var(--text);
   cursor: pointer;
-  white-space: nowrap;
+  font-size: 18px;
+  line-height: 1;
 }
 
-.play:hover {
-  border-color: var(--accent);
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field .label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field-input {
+  width: 100%;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 12px;
+  outline: none;
+}
+
+.form-error {
+  color: #d44;
+  font-size: 12px;
+}
+
+.submit-btn {
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 </style>
-
