@@ -1,0 +1,113 @@
+services:
+  user-mysql:
+    image: docker.1ms.run/library/mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: user_db
+    volumes:
+      - user_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-padmin"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  meta-mysql:
+    image: docker.1ms.run/library/mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: meta_db
+    volumes:
+      - meta_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-padmin"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  list-mysql:
+    image: docker.1ms.run/library/mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: list_db
+    volumes:
+      - list_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-padmin"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  user-service:
+    build:
+      context: ./user-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8081:8081"
+    depends_on:
+      user-mysql:
+        condition: service_healthy
+
+  meta-service:
+    build:
+      context: ./meta-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8082:8082"
+    depends_on:
+      meta-mysql:
+        condition: service_healthy
+
+  list-service:
+    build:
+      context: ./list-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8083:8083"
+    depends_on:
+      list-mysql:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      meta-service:
+        condition: service_started
+
+  gateway-service:
+    build:
+      context: ./gateway-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8090:8090"
+    depends_on:
+      user-service:
+        condition: service_started
+      meta-service:
+        condition: service_started
+      list-service:
+        condition: service_started
+
+  music-web:
+    build:
+      context: ./music-web
+    ports:
+      - "80:80"
+    volumes:
+      - music_data:/usr/share/nginx/html/data:ro
+    depends_on:
+      gateway-service:
+        condition: service_started
+
+volumes:
+  user_mysql_data:
+  meta_mysql_data:
+  list_mysql_data:
+  music_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data

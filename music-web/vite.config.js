@@ -50,4 +50,12 @@ function dataFolderPlugin() {
 
 export default defineConfig({
   plugins: [vue(), dataFolderPlugin()],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+      },
+    },
+  },
 })

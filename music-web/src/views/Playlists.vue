@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8090'
+const apiBase = import.meta.env.VITE_API_BASE_URL || ''
 
 const loading = ref(false)
 const error = ref('')

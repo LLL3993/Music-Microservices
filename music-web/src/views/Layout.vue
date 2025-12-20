@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 const router = useRouter()
 const route = useRoute()
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8090'
+const apiBase = import.meta.env.VITE_API_BASE_URL || ''
 
 function safeParseJson(value) {
   try {
