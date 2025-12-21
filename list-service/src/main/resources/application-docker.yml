@@ -6,6 +6,10 @@ spring:
         server-addr: nacos:8848
         ephemeral: false
         health-check-path: /actuator/health
+    discovery:
+      client:
+        simple:
+          enabled: false
   datasource:
     url: jdbc:mysql://list-mysql:3306/list_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root

@@ -9,6 +9,7 @@ import com.zjsu.lyy.list_service.integration.MetaClient;
 import com.zjsu.lyy.list_service.integration.UserClient;
 import com.zjsu.lyy.list_service.repository.PlaylistDetailRepository;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,23 +20,26 @@ public class PlaylistDetailService {
 	private final PlaylistService playlistService;
 	private final UserClient userClient;
 	private final MetaClient metaClient;
+	private final boolean validationEnabled;
 
 	public PlaylistDetailService(
 			PlaylistDetailRepository playlistDetailRepository,
 			PlaylistService playlistService,
 			UserClient userClient,
-			MetaClient metaClient
+			MetaClient metaClient,
+			@Value("${services.validation.enabled:true}") boolean validationEnabled
 	) {
 		this.playlistDetailRepository = playlistDetailRepository;
 		this.playlistService = playlistService;
 		this.userClient = userClient;
 		this.metaClient = metaClient;
+		this.validationEnabled = validationEnabled;
 	}
 
 	@Transactional
 	public PlaylistDetailResponse createDetail(String username, CreatePlaylistDetailRequest request) {
-		userClient.assertUserExists(username);
-		metaClient.assertSongExists(request.songName());
+		assertUserExists(username);
+		assertSongExists(request.songName());
 		playlistService.getPlaylistEntityByUsernameAndName(username, request.playlistName());
 
 		if (playlistDetailRepository.existsByUsernameAndPlaylistNameAndSongName(
@@ -55,7 +59,7 @@ public class PlaylistDetailService {
 
 	@Transactional(readOnly = true)
 	public List<PlaylistDetailResponse> listDetails(String username, String playlistName) {
-		userClient.assertUserExists(username);
+		assertUserExists(username);
 		playlistService.getPlaylistEntityByUsernameAndName(username, playlistName);
 
 		return playlistDetailRepository.findAllByUsernameAndPlaylistNameOrderByIdDesc(username, playlistName)
@@ -79,5 +83,19 @@ public class PlaylistDetailService {
 				detail.getPlaylistName(),
 				detail.getSongName()
 		);
+	}
+
+	private void assertUserExists(String username) {
+		if (!validationEnabled) {
+			return;
+		}
+		userClient.assertUserExists(username);
+	}
+
+	private void assertSongExists(String songName) {
+		if (!validationEnabled) {
+			return;
+		}
+		metaClient.assertSongExists(songName);
 	}
 }

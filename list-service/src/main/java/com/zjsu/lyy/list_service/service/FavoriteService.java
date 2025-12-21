@@ -9,6 +9,7 @@ import com.zjsu.lyy.list_service.integration.MetaClient;
 import com.zjsu.lyy.list_service.integration.UserClient;
 import com.zjsu.lyy.list_service.repository.FavoriteRepository;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,17 +19,24 @@ public class FavoriteService {
 	private final FavoriteRepository favoriteRepository;
 	private final UserClient userClient;
 	private final MetaClient metaClient;
+	private final boolean validationEnabled;
 
-	public FavoriteService(FavoriteRepository favoriteRepository, UserClient userClient, MetaClient metaClient) {
+	public FavoriteService(
+			FavoriteRepository favoriteRepository,
+			UserClient userClient,
+			MetaClient metaClient,
+			@Value("${services.validation.enabled:true}") boolean validationEnabled
+	) {
 		this.favoriteRepository = favoriteRepository;
 		this.userClient = userClient;
 		this.metaClient = metaClient;
+		this.validationEnabled = validationEnabled;
 	}
 
 	@Transactional
 	public FavoriteResponse createFavorite(String username, CreateFavoriteRequest request) {
-		userClient.assertUserExists(username);
-		metaClient.assertSongExists(request.songName());
+		assertUserExists(username);
+		assertSongExists(request.songName());
 
 		if (favoriteRepository.existsByUsernameAndSongName(username, request.songName())) {
 			throw new ConflictException("收藏已存在");
@@ -44,7 +52,7 @@ public class FavoriteService {
 
 	@Transactional(readOnly = true)
 	public List<FavoriteResponse> listFavoritesByUsername(String username) {
-		userClient.assertUserExists(username);
+		assertUserExists(username);
 
 		return favoriteRepository.findAllByUsernameOrderByIdDesc(username)
 				.stream()
@@ -62,5 +70,19 @@ public class FavoriteService {
 
 	private static FavoriteResponse toResponse(Favorite favorite) {
 		return new FavoriteResponse(favorite.getId(), favorite.getUsername(), favorite.getSongName());
+	}
+
+	private void assertUserExists(String username) {
+		if (!validationEnabled) {
+			return;
+		}
+		userClient.assertUserExists(username);
+	}
+
+	private void assertSongExists(String songName) {
+		if (!validationEnabled) {
+			return;
+		}
+		metaClient.assertSongExists(songName);
 	}
 }

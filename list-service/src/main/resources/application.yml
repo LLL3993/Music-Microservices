@@ -7,6 +7,19 @@ spring:
     nacos:
       discovery:
         enabled: false
+    openfeign:
+      circuitbreaker:
+        enabled: true
+        group:
+          enabled: true
+    discovery:
+      client:
+        simple:
+          instances:
+            user-service:
+              - uri: http://localhost:8081
+            meta-service:
+              - uri: http://localhost:8082
   datasource:
     url: jdbc:mysql://localhost:3306/list_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root
@@ -26,3 +39,17 @@ services:
     base-url: http://localhost:8081
   meta:
     base-url: http://localhost:8082
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 50
+    instances:
+      user-service:
+        baseConfig: default
+      meta-service:
+        baseConfig: default

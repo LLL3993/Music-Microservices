@@ -10,6 +10,7 @@ import com.zjsu.lyy.list_service.integration.UserClient;
 import com.zjsu.lyy.list_service.repository.PlaylistDetailRepository;
 import com.zjsu.lyy.list_service.repository.PlaylistRepository;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,16 +20,23 @@ public class PlaylistService {
 	private final PlaylistRepository playlistRepository;
 	private final PlaylistDetailRepository playlistDetailRepository;
 	private final UserClient userClient;
+	private final boolean validationEnabled;
 
-	public PlaylistService(PlaylistRepository playlistRepository, PlaylistDetailRepository playlistDetailRepository, UserClient userClient) {
+	public PlaylistService(
+			PlaylistRepository playlistRepository,
+			PlaylistDetailRepository playlistDetailRepository,
+			UserClient userClient,
+			@Value("${services.validation.enabled:true}") boolean validationEnabled
+	) {
 		this.playlistRepository = playlistRepository;
 		this.playlistDetailRepository = playlistDetailRepository;
 		this.userClient = userClient;
+		this.validationEnabled = validationEnabled;
 	}
 
 	@Transactional
 	public PlaylistResponse createPlaylist(String username, CreatePlaylistRequest request) {
-		userClient.assertUserExists(username);
+		assertUserExists(username);
 
 		if (playlistRepository.existsByUsernameAndPlaylistName(username, request.playlistName())) {
 			throw new ConflictException("歌单已存在");
@@ -46,7 +54,7 @@ public class PlaylistService {
 
 	@Transactional(readOnly = true)
 	public List<PlaylistResponse> listPlaylistsByUsername(String username) {
-		userClient.assertUserExists(username);
+		assertUserExists(username);
 		return playlistRepository.findAllByUsernameOrderByIdDesc(username)
 				.stream()
 				.map(PlaylistService::toResponse)
@@ -113,5 +121,12 @@ public class PlaylistService {
 				playlist.getDescription(),
 				playlist.isPublic()
 		);
+	}
+
+	private void assertUserExists(String username) {
+		if (!validationEnabled) {
+			return;
+		}
+		userClient.assertUserExists(username);
 	}
 }

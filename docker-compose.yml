@@ -66,6 +66,20 @@ services:
       nacos:
         condition: service_healthy
 
+  user-service-2:
+    build:
+      context: ./user-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8084
+    ports:
+      - "8084:8084"
+    depends_on:
+      user-mysql:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+
   meta-service:
     build:
       context: ./meta-service
