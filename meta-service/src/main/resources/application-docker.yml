@@ -1,4 +1,11 @@
 spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: true
+        server-addr: nacos:8848
+        ephemeral: false
+        health-check-path: /actuator/health
   datasource:
     url: jdbc:mysql://meta-mysql:3306/meta_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root
@@ -8,3 +15,12 @@ spring:
     hibernate:
       ddl-auto: update
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
