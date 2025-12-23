@@ -12,28 +12,25 @@ public class ListEventConsumer {
 
 	private static final Logger log = LoggerFactory.getLogger(ListEventConsumer.class);
 
-	private final ListCleanupService cleanupService;
+	private final ListEventHandlerService handlerService;
 
-	public ListEventConsumer(ListCleanupService cleanupService) {
-		this.cleanupService = cleanupService;
+	public ListEventConsumer(ListEventHandlerService handlerService) {
+		this.handlerService = handlerService;
 	}
 
 	@RabbitListener(queues = RabbitMqConstants.QUEUE_LIST_USER_DELETED)
 	public void onUserDeleted(UserDeletedEvent event) {
-		if (event == null || event.username() == null || event.username().isBlank()) {
-			return;
+		boolean handled = handlerService.handleUserDeleted(event);
+		if (handled) {
+			log.info("Consumed user.deleted eventId={} username={}", event.eventId(), event.username());
 		}
-		cleanupService.cleanupByUsername(event.username());
-		log.info("Consumed user.deleted eventId={} username={}", event.eventId(), event.username());
 	}
 
 	@RabbitListener(queues = RabbitMqConstants.QUEUE_LIST_SONG_DELETED)
 	public void onSongDeleted(SongDeletedEvent event) {
-		if (event == null || event.songName() == null || event.songName().isBlank()) {
-			return;
+		boolean handled = handlerService.handleSongDeleted(event);
+		if (handled) {
+			log.info("Consumed meta.song.deleted eventId={} songName={}", event.eventId(), event.songName());
 		}
-		cleanupService.cleanupBySongName(event.songName());
-		log.info("Consumed meta.song.deleted eventId={} songName={}", event.eventId(), event.songName());
 	}
 }
-
