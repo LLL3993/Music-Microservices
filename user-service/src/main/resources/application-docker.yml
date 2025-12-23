@@ -28,6 +28,13 @@ spring:
     hibernate:
       ddl-auto: update
 
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    username: ${RABBITMQ_USERNAME:music}
+    password: ${RABBITMQ_PASSWORD:music123}
+    virtual-host: ${RABBITMQ_VHOST:/}
+
 management:
   endpoints:
     web:

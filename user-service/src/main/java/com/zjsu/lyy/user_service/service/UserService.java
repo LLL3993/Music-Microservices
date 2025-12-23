@@ -6,6 +6,7 @@ import com.zjsu.lyy.user_service.dto.UserResponse;
 import com.zjsu.lyy.user_service.entity.User;
 import com.zjsu.lyy.user_service.exception.ConflictException;
 import com.zjsu.lyy.user_service.exception.NotFoundException;
+import com.zjsu.lyy.user_service.messaging.UserEventPublisher;
 import com.zjsu.lyy.user_service.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,10 +17,12 @@ public class UserService {
 
 	private final UserRepository userRepository;
 	private final PasswordEncoder passwordEncoder;
+	private final UserEventPublisher userEventPublisher;
 
-	public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+	public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, UserEventPublisher userEventPublisher) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
+		this.userEventPublisher = userEventPublisher;
 	}
 
 	@Transactional
@@ -71,10 +74,11 @@ public class UserService {
 
 	@Transactional
 	public void deleteUser(Long id) {
-		if (!userRepository.existsById(id)) {
-			throw new NotFoundException("用户不存在");
-		}
+		User user = userRepository.findById(id)
+				.orElseThrow(() -> new NotFoundException("用户不存在"));
+		String username = user.getUsername();
 		userRepository.deleteById(id);
+		userEventPublisher.publishUserDeleted(username);
 	}
 
 	private static UserResponse toResponse(User user) {

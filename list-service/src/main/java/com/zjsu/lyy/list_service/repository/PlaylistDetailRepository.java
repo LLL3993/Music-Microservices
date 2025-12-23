@@ -2,7 +2,6 @@ package com.zjsu.lyy.list_service.repository;
 
 import com.zjsu.lyy.list_service.entity.PlaylistDetail;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PlaylistDetailRepository extends JpaRepository<PlaylistDetail, Long> {
@@ -13,4 +12,8 @@ public interface PlaylistDetailRepository extends JpaRepository<PlaylistDetail, 
 	List<PlaylistDetail> findAllByUsernameAndPlaylistName(String username, String playlistName);
 
 	void deleteAllByUsernameAndPlaylistName(String username, String playlistName);
+
+	void deleteAllByUsername(String username);
+
+	void deleteAllBySongName(String songName);
 }

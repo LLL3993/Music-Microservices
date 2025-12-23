@@ -15,4 +15,6 @@ public interface PlaylistRepository extends JpaRepository<Playlist, Long> {
 	List<Playlist> findAllByUsernameOrderByIdDesc(String username);
 
 	List<Playlist> findAllByPlaylistNameOrderByIdDesc(String playlistName);
+
+	void deleteAllByUsername(String username);
 }

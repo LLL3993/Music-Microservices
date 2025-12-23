@@ -58,6 +58,23 @@ services:
       retries: 80
       start_period: 30s
 
+  rabbitmq:
+    image: docker.1ms.run/library/rabbitmq:3.13-management
+    security_opt:
+      - apparmor:unconfined
+      - seccomp:unconfined
+    environment:
+      RABBITMQ_DEFAULT_USER: music
+      RABBITMQ_DEFAULT_PASS: music123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
   user-service:
     build:
       context: ./user-service
@@ -77,6 +94,8 @@ services:
       user-mysql:
         condition: service_healthy
       nacos:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   user-service-2:
@@ -100,6 +119,8 @@ services:
         condition: service_healthy
       nacos:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   meta-service:
     build:
@@ -121,6 +142,8 @@ services:
         condition: service_healthy
       nacos:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   list-service:
     build:
@@ -141,6 +164,8 @@ services:
       list-mysql:
         condition: service_healthy
       nacos:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       user-service:
         condition: service_healthy

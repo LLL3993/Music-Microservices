@@ -6,6 +6,7 @@ import com.zjsu.lyy.meta_service.dto.UpdateMetaRequest;
 import com.zjsu.lyy.meta_service.entity.Meta;
 import com.zjsu.lyy.meta_service.exception.ConflictException;
 import com.zjsu.lyy.meta_service.exception.NotFoundException;
+import com.zjsu.lyy.meta_service.messaging.MetaEventPublisher;
 import com.zjsu.lyy.meta_service.repository.MetaRepository;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -15,9 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class MetaService {
 
 	private final MetaRepository metaRepository;
+	private final MetaEventPublisher metaEventPublisher;
 
-	public MetaService(MetaRepository metaRepository) {
+	public MetaService(MetaRepository metaRepository, MetaEventPublisher metaEventPublisher) {
 		this.metaRepository = metaRepository;
+		this.metaEventPublisher = metaEventPublisher;
 	}
 
 	@Transactional
@@ -81,10 +84,11 @@ public class MetaService {
 
 	@Transactional
 	public void deleteMeta(Long id) {
-		if (!metaRepository.existsById(id)) {
-			throw new NotFoundException("歌曲不存在");
-		}
+		Meta meta = metaRepository.findById(id)
+				.orElseThrow(() -> new NotFoundException("歌曲不存在"));
+		String songName = meta.getSongName();
 		metaRepository.deleteById(id);
+		metaEventPublisher.publishSongDeleted(songName);
 	}
 
 	private static MetaResponse toResponse(Meta meta) {

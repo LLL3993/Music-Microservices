@@ -1,3 +1,5 @@
+12.21 实现一部分nacos config配置中心的内容，热刷新还存在问题
+
 # Nacos Config 配置中心（仅 Docker 场景启用）
 
 ## 0. 背景与目标
@@ -82,30 +84,6 @@ spring:
             group: ${NACOS_GROUP:DEFAULT_GROUP}
             refresh: true
 ```
-
-### 1.3 故障排查：Docker 日志只显示订阅 `<service>.yml`，未显示 `common.yml`
-
-现象：
-
-- 服务启动日志里只看到订阅/监听了 `list-service.yml`（或 `user-service.yml` 等），看不到 `common.yml`
-- 或者更极端：日志里只看到 Nacos Discovery 的注册成功（`NacosServiceRegistry ... register finished`），完全看不到任何 Nacos Config 的初始化/监听/变更日志
-
-本项目的处理：
-
-- 把 Nacos Config 的初始化配置从 `application-docker.yml` 移到 `bootstrap.yml`
-- `bootstrap.yml` 中通过 `shared-configs` 显式声明 `common.yml`（`user-service` / `gateway-service` 额外声明 `shared-auth.yml`）
-- 在 4 个服务 `pom.xml` 增加 `org.springframework.cloud:spring-cloud-starter-bootstrap`，确保 `bootstrap.yml` 在启动早期生效
-- `bootstrap.yml` 的 Docker 段使用 `spring.config.activate.on-profile: docker`，并在 `shared-configs` 里显式补上 `group`，避免出现“只注册、不拉配置”的情况
-
-补充：
-
-- 本项目不使用 `spring.config.import=nacos:...` 的 ConfigData 导入方式（在当前版本组合下，写成 `optional:nacos:` 这类“未指定 dataId”会直接导致启动失败）
-
-对应改动位置：
-
-- `*/src/main/resources/bootstrap.yml`
-- `*/pom.xml`
-- `*/src/main/resources/application-docker.yml`（只保留运行时配置：discovery、datasource 等）
 
 ## 2. Nacos 中创建配置（DataId / Group / Namespace）
 
@@ -506,3 +484,9 @@ curl -i "http://localhost:8090/api/favorites/username" ^
 - `user-service/.../JwtService.java`（`@RefreshScope`）
 - `gateway-service/.../JwtAuthGlobalFilter.java`（`@RefreshScope`）
 - `*/.../*Application.java`（配置变更监听回调：`EnvironmentChangeEvent`）
+
+
+
+
+
+12.22 经检验，使用`bootstrap.yml`配置文件可能会导致微服务无法订阅`common.yml`等配置文件，现在将`bootstrap.yml`里面关于nacos的内容移动到`application-docker.yml`配置文件中，并且`bootstrap.yml`删除。
