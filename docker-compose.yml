@@ -75,6 +75,41 @@ services:
       timeout: 3s
       retries: 60
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      user-service:
+        condition: service_healthy
+      user-service-2:
+        condition: service_healthy
+      meta-service:
+        condition: service_healthy
+      list-service:
+        condition: service_healthy
+      gateway-service:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.6.3
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+
   user-service:
     build:
       context: ./user-service
@@ -212,6 +247,8 @@ volumes:
   user_mysql_data:
   meta_mysql_data:
   list_mysql_data:
+  prometheus_data:
+  grafana_data:
   music_data:
     driver: local
     driver_opts:
