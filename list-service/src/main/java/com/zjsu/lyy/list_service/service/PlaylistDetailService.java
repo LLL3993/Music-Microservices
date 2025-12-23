@@ -10,17 +10,19 @@ import com.zjsu.lyy.list_service.integration.UserClient;
 import com.zjsu.lyy.list_service.repository.PlaylistDetailRepository;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RefreshScope
 public class PlaylistDetailService {
 
 	private final PlaylistDetailRepository playlistDetailRepository;
 	private final PlaylistService playlistService;
 	private final UserClient userClient;
 	private final MetaClient metaClient;
-	private final boolean validationEnabled;
+	private boolean validationEnabled;
 
 	public PlaylistDetailService(
 			PlaylistDetailRepository playlistDetailRepository,

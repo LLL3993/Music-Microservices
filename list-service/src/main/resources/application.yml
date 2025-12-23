@@ -4,9 +4,16 @@ spring:
   application:
     name: list-service
   cloud:
+    config:
+      import-check:
+        enabled: false
     nacos:
       discovery:
         enabled: false
+      config:
+        enabled: false
+        import-check:
+          enabled: false
     openfeign:
       circuitbreaker:
         enabled: true

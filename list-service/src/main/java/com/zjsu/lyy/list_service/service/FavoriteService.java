@@ -10,16 +10,18 @@ import com.zjsu.lyy.list_service.integration.UserClient;
 import com.zjsu.lyy.list_service.repository.FavoriteRepository;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RefreshScope
 public class FavoriteService {
 
 	private final FavoriteRepository favoriteRepository;
 	private final UserClient userClient;
 	private final MetaClient metaClient;
-	private final boolean validationEnabled;
+	private boolean validationEnabled;
 
 	public FavoriteService(
 			FavoriteRepository favoriteRepository,

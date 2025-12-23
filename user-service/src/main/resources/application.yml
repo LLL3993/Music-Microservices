@@ -4,9 +4,16 @@ spring:
   application:
     name: user-service
   cloud:
+    config:
+      import-check:
+        enabled: false
     nacos:
       discovery:
         enabled: false
+      config:
+        enabled: false
+        import-check:
+          enabled: false
   datasource:
     url: jdbc:mysql://localhost:3306/user_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root

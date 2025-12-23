@@ -5,9 +5,16 @@ spring:
   application:
     name: gateway-service
   cloud:
+    config:
+      import-check:
+        enabled: false
     nacos:
       discovery:
         enabled: false
+      config:
+        enabled: false
+        import-check:
+          enabled: false
     gateway:
       server:
         webflux:

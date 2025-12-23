@@ -11,16 +11,18 @@ import com.zjsu.lyy.list_service.repository.PlaylistDetailRepository;
 import com.zjsu.lyy.list_service.repository.PlaylistRepository;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RefreshScope
 public class PlaylistService {
 
 	private final PlaylistRepository playlistRepository;
 	private final PlaylistDetailRepository playlistDetailRepository;
 	private final UserClient userClient;
-	private final boolean validationEnabled;
+	private boolean validationEnabled;
 
 	public PlaylistService(
 			PlaylistRepository playlistRepository,

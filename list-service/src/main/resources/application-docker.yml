@@ -1,4 +1,8 @@
 spring:
+  config:
+    import:
+      - "optional:nacos:common.yml?namespace=${NACOS_NAMESPACE:}&group=${NACOS_GROUP:DEFAULT_GROUP}&refreshEnabled=true"
+      - "optional:nacos:${spring.application.name}.yml?namespace=${NACOS_NAMESPACE:}&group=${NACOS_GROUP:DEFAULT_GROUP}&refreshEnabled=true"
   cloud:
     nacos:
       discovery:
@@ -6,6 +10,14 @@ spring:
         server-addr: nacos:8848
         ephemeral: false
         health-check-path: /actuator/health
+      config:
+        enabled: true
+        server-addr: nacos:8848
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        prefix: ${spring.application.name}
+        file-extension: yml
+        refresh-enabled: true
     discovery:
       client:
         simple:

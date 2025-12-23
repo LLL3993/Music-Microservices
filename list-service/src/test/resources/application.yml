@@ -1,4 +1,11 @@
 spring:
+  cloud:
+    config:
+      import-check:
+        enabled: false
+    nacos:
+      config:
+        enabled: false
   datasource:
     url: jdbc:h2:mem:listdb;MODE=MySQL;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
