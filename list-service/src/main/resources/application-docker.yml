@@ -22,6 +22,9 @@ spring:
       client:
         simple:
           enabled: false
+    openfeign:
+      micrometer:
+        enabled: true
   datasource:
     url: jdbc:mysql://list-mysql:3306/list_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root
@@ -39,6 +42,14 @@ spring:
     virtual-host: ${RABBITMQ_VHOST:/}
 
 management:
+  tracing:
+    sampling:
+      probability: 1.0
+    propagation:
+      type: b3
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans
   endpoints:
     web:
       exposure:
