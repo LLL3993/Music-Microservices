@@ -1,11 +1,12 @@
 <script setup>
 import axios from 'axios'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
+const defaultPlaylistCover = 'https://dummyimage.com/200x200/999999/ff4400.png&text=PLAYLIST'
 
 const loading = ref(false)
 const error = ref('')
@@ -22,6 +23,22 @@ const createError = ref('')
 const createForm = ref({
   playlistName: '',
   description: '',
+})
+
+function baseUrl() {
+  const b = import.meta.env.BASE_URL
+  return typeof b === 'string' && b ? b : '/'
+}
+
+function coverUrlBySong(song) {
+  if (!song) return ''
+  return `${baseUrl()}data/cover/${encodeURIComponent(song)}.jpg`
+}
+
+const selectedPlaylistCoverUrl = computed(() => {
+  const firstSong = details.value?.[0]?.songName
+  if (typeof firstSong === 'string' && firstSong.trim()) return coverUrlBySong(firstSong)
+  return defaultPlaylistCover
 })
 
 function pickErrorMessage(err) {
@@ -268,7 +285,7 @@ onMounted(loadPlaylists)
       <div class="detail-head">
         <img
           class="cover"
-          src="https://dummyimage.com/200x200/999999/ff4400.png&text=PLAYLIST"
+          :src="selectedPlaylistCoverUrl"
           alt="cover"
         />
         <div class="info">

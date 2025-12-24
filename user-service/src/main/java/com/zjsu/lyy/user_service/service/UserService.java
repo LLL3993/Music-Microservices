@@ -8,6 +8,7 @@ import com.zjsu.lyy.user_service.exception.ConflictException;
 import com.zjsu.lyy.user_service.exception.NotFoundException;
 import com.zjsu.lyy.user_service.messaging.UserEventPublisher;
 import com.zjsu.lyy.user_service.repository.UserRepository;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -49,6 +50,14 @@ public class UserService {
 		User user = userRepository.findByUsername(username)
 				.orElseThrow(() -> new NotFoundException("用户不存在"));
 		return toResponse(user);
+	}
+
+	@Transactional(readOnly = true)
+	public List<UserResponse> listUsers() {
+		return userRepository.findAll()
+				.stream()
+				.map(UserService::toResponse)
+				.toList();
 	}
 
 	@Transactional

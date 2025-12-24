@@ -66,6 +66,14 @@ public class MetaService {
 				.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<MetaResponse> listAll() {
+		return metaRepository.findAll()
+				.stream()
+				.map(MetaService::toResponse)
+				.toList();
+	}
+
 	@Transactional
 	public MetaResponse updateMeta(Long id, UpdateMetaRequest request) {
 		Meta meta = metaRepository.findById(id)

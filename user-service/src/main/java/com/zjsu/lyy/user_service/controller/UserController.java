@@ -5,10 +5,12 @@ import com.zjsu.lyy.user_service.dto.UpdateUserRequest;
 import com.zjsu.lyy.user_service.dto.UserResponse;
 import com.zjsu.lyy.user_service.service.UserService;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -36,6 +38,14 @@ public class UserController {
 	@GetMapping("/username")
 	public UserResponse getByUsernameQuery(@RequestParam String username) {
 		return userService.getUserByUsername(username);
+	}
+
+	@GetMapping
+	public ResponseEntity<List<UserResponse>> listAll(@RequestHeader(value = "X-User-Is-Admin", required = false) String isAdmin) {
+		if (!"true".equalsIgnoreCase(String.valueOf(isAdmin))) {
+			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+		}
+		return ResponseEntity.ok(userService.listUsers());
 	}
 
 	@PutMapping("/{id}")

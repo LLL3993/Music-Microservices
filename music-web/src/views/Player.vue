@@ -128,7 +128,8 @@ function onTogglePlay() {
 }
 
 function seekTo(time, options) {
-  const t = clamp(time, 0, duration.value || 0)
+  const max = Number.isFinite(duration.value) && duration.value > 0 ? duration.value : Number.POSITIVE_INFINITY
+  const t = clamp(time, 0, max)
   window.dispatchEvent(new CustomEvent('player:seek', { detail: { time: t, persist: options?.persist } }))
 }
 
@@ -372,7 +373,7 @@ watch(
 .body {
   height: 100%;
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: minmax(420px, 840px) 1fr;
   gap: 18px;
   padding-top: 34px;
 }
@@ -394,6 +395,8 @@ watch(
   align-items: center;
   justify-content: center;
   margin: 0 auto;
+  animation: rotate 20s linear infinite;
+  animation-play-state: paused;
 }
 
 .cover {
@@ -406,7 +409,7 @@ watch(
 }
 
 .cover-wrap.playing {
-  animation: rotate 20s linear infinite;
+  animation-play-state: running;
 }
 
 @keyframes rotate {
@@ -427,9 +430,11 @@ watch(
 }
 
 .lyrics {
-  flex: 1;
-  overflow: auto;
-  max-width: 420px;
+  height: 260px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  width: 100%;
+  max-width: none;
   margin: 0 auto;
 }
 

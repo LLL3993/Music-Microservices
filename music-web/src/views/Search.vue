@@ -76,6 +76,10 @@ function dispatchPlayerSet(songName, artist) {
   )
 }
 
+function playSong(songName, artist) {
+  dispatchPlayerSet(songName, artist)
+}
+
 function goPlayer(songName, artist) {
   dispatchPlayerSet(songName, artist)
   router.push(`/player?name=${encodeURIComponent(songName)}`)
@@ -327,7 +331,7 @@ async function doSearch() {
                 加入
               </button>
             </div>
-            <button class="play" type="button" @click="goPlayer(s.songName, s.artist)">
+            <button class="play" type="button" @click="playSong(s.songName, s.artist)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
               </svg>

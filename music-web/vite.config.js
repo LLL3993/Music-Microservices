@@ -41,7 +41,65 @@ function dataFolderPlugin() {
         }
 
         const ext = path.extname(abs).toLowerCase()
+        const stat = fs.statSync(abs)
+        const size = stat.size
+
         res.setHeader('Content-Type', contentTypeByExt(ext))
+        res.setHeader('Accept-Ranges', 'bytes')
+
+        const rangeHeader = req.headers.range
+        if (typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim())
+          if (match) {
+            const startText = match[1]
+            const endText = match[2]
+
+            let start = startText ? Number.parseInt(startText, 10) : 0
+            let end = endText ? Number.parseInt(endText, 10) : size - 1
+
+            if (!startText && endText) {
+              const suffixLen = Number.parseInt(endText, 10)
+              if (Number.isFinite(suffixLen) && suffixLen > 0) {
+                start = Math.max(0, size - suffixLen)
+                end = size - 1
+              }
+            }
+
+            if (
+              !Number.isFinite(start) ||
+              !Number.isFinite(end) ||
+              start < 0 ||
+              end < start ||
+              start >= size
+            ) {
+              res.statusCode = 416
+              res.setHeader('Content-Range', `bytes */${size}`)
+              res.end()
+              return
+            }
+
+            end = Math.min(end, size - 1)
+
+            res.statusCode = 206
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`)
+            res.setHeader('Content-Length', String(end - start + 1))
+
+            if (req.method === 'HEAD') {
+              res.end()
+              return
+            }
+
+            fs.createReadStream(abs, { start, end }).pipe(res)
+            return
+          }
+        }
+
+        res.statusCode = 200
+        res.setHeader('Content-Length', String(size))
+        if (req.method === 'HEAD') {
+          res.end()
+          return
+        }
         fs.createReadStream(abs).pipe(res)
       })
     },

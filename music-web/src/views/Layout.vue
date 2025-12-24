@@ -27,6 +27,25 @@ const isDiscoverActive = computed(() => route.name === 'Discover')
 const isSearchActive = computed(() => route.name === 'Search')
 const isFavoritesActive = computed(() => route.name === 'Favorites')
 const isPlaylistsActive = computed(() => route.name === 'Playlists')
+const isAdminActive = computed(() => String(route.path || '').startsWith('/admin'))
+const isAdminUsersActive = computed(() => route.name === 'AdminUsers')
+const isAdminMusicActive = computed(() => route.name === 'AdminMusic')
+
+const isAdmin = computed(() => Boolean(user.value?.isAdmin))
+
+const adminMenuOpen = ref(false)
+
+watch(
+  () => route.path,
+  (p) => {
+    if (String(p || '').startsWith('/admin')) adminMenuOpen.value = true
+  },
+  { immediate: true },
+)
+
+function toggleAdminMenu() {
+  adminMenuOpen.value = !adminMenuOpen.value
+}
 
 const theme = ref(document.documentElement.getAttribute('data-theme') || 'dark')
 
@@ -52,6 +71,9 @@ function baseUrl() {
   const b = import.meta.env.BASE_URL
   return typeof b === 'string' && b ? b : '/'
 }
+
+const brandLogoUrl = computed(() => `${baseUrl()}data/pic/icon.jpg`)
+const userAvatarUrl = computed(() => `${baseUrl()}data/pic/user.jpg`)
 
 function musicUrlBySong(song) {
   if (!song) return ''
@@ -106,6 +128,7 @@ const activeLyricItem = computed(() => {
 
 const isSeeking = ref(false)
 const seekingTime = ref(0)
+const pendingSeek = ref(null)
 
 function clamp(num, min, max) {
   if (!Number.isFinite(num)) return min
@@ -483,14 +506,23 @@ function onPlayerNext() {
 function seekTo(time, options) {
   if (!audioEl.value) return
   if (!Number.isFinite(time)) return
-  const nextTime = clamp(
-    time,
-    0,
-    Number.isFinite(playerState.value.duration) ? playerState.value.duration : 0,
-  )
-  audioEl.value.currentTime = nextTime
-  playerState.value.currentTime = nextTime
+  const audioDuration = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0
+  const stateDuration = Number.isFinite(playerState.value.duration) ? playerState.value.duration : 0
+  const max = audioDuration > 0 ? audioDuration : stateDuration > 0 ? stateDuration : Number.POSITIVE_INFINITY
+
+  const nextTime = clamp(time, 0, max)
   const shouldPersist = options?.persist !== false
+
+  if (max === Number.POSITIVE_INFINITY) {
+    pendingSeek.value = { time: nextTime, persist: shouldPersist }
+  } else {
+    pendingSeek.value = null
+  }
+
+  try {
+    audioEl.value.currentTime = nextTime
+  } catch {}
+  playerState.value.currentTime = nextTime
   if (shouldPersist) persistPlayerState()
   emitPlayerState()
 }
@@ -505,6 +537,11 @@ function onAudioLoadedMetadata() {
   if (!audioEl.value) return
   const d = Number.isFinite(audioEl.value.duration) ? audioEl.value.duration : 0
   playerState.value.duration = d
+  const pending = pendingSeek.value
+  if (pending && Number.isFinite(pending.time)) {
+    pendingSeek.value = null
+    seekTo(pending.time, { persist: pending.persist })
+  }
   persistPlayerState()
   emitPlayerState()
 }
@@ -670,7 +707,7 @@ onBeforeUnmount(() => {
         <div class="brand" @click="router.push({ name: 'Discover' })">
           <img
             class="brand-logo"
-            src="https://dummyimage.com/320x100/999999/ff4400.png&text=MUSIC"
+            :src="brandLogoUrl"
             alt="MUSIC"
           />
         </div>
@@ -693,7 +730,7 @@ onBeforeUnmount(() => {
 
         <div v-if="isAuthed" class="user">
           <div class="user-name">{{ user?.username || '已登录' }}</div>
-          <img class="avatar" src="https://dummyimage.com/80x80/999999/ff4400.png&text=U" alt="User" />
+          <img class="avatar" :src="userAvatarUrl" alt="User" />
           <div class="user-menu">
             <div class="menu-card">
               <button class="menu-btn" type="button" @click="logout">退出登录</button>
@@ -762,6 +799,32 @@ onBeforeUnmount(() => {
             @click.prevent="router.push({ name: 'Playlists' })"
             >歌单</a
           >
+          <a
+            v-if="isAuthed && isAdmin"
+            class="nav-item nav-parent"
+            :class="{ active: isAdminActive, open: adminMenuOpen }"
+            href="/admin"
+            @click.prevent="toggleAdminMenu"
+          >
+            <span>管理界面</span>
+            <span class="caret">▾</span>
+          </a>
+          <div v-if="isAuthed && isAdmin && adminMenuOpen" class="nav-sub">
+            <a
+              class="nav-item sub"
+              :class="{ active: isAdminUsersActive }"
+              href="/admin/users"
+              @click.prevent="router.push({ name: 'AdminUsers' })"
+              >用户管理</a
+            >
+            <a
+              class="nav-item sub"
+              :class="{ active: isAdminMusicActive }"
+              href="/admin/music"
+              @click.prevent="router.push({ name: 'AdminMusic' })"
+              >音乐管理</a
+            >
+          </div>
         </nav>
       </aside>
 
@@ -1175,6 +1238,29 @@ onBeforeUnmount(() => {
   color: var(--text);
 }
 
+.nav-item.nav-parent {
+  justify-content: space-between;
+}
+
+.nav-item.nav-parent .caret {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.nav-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 10px;
+  margin-top: -2px;
+}
+
+.nav-item.sub {
+  height: 36px;
+  font-size: 13px;
+  opacity: 0.95;
+}
+
 .content {
   flex: 1;
   padding: 18px;
@@ -1194,6 +1280,8 @@ onBeforeUnmount(() => {
   align-items: stretch;
   gap: 14px;
   padding: 0 18px;
+  max-width: 1120px;
+  margin: 0 auto;
 }
 
 .playerbar-left {

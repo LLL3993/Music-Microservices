@@ -6,6 +6,7 @@ import Search from '../views/Search.vue'
 import Favorites from '../views/Favorites.vue'
 import Playlists from '../views/Playlists.vue'
 import Player from '../views/Player.vue'
+import Admin from '../views/Admin.vue'
 import Empty from '../views/Empty.vue'
 
 const router = createRouter({
@@ -21,6 +22,9 @@ const router = createRouter({
         { path: 'favorites', name: 'Favorites', component: Favorites },
         { path: 'playlists', name: 'Playlists', component: Playlists },
         { path: 'player', name: 'Player', component: Player },
+        { path: 'admin', redirect: { name: 'AdminUsers' } },
+        { path: 'admin/users', name: 'AdminUsers', component: Admin },
+        { path: 'admin/music', name: 'AdminMusic', component: Admin },
       ],
     },
     { path: '/:pathMatch(.*)*', name: 'Empty', component: Empty },
