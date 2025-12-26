@@ -118,6 +118,50 @@ const lyricActiveLine = ref(0)
 
 const favoriteIdBySongName = ref({})
 
+const toastOpen = ref(false)
+const toastMessage = ref('')
+let toastTimer = null
+
+function showToast(message) {
+  const msg = typeof message === 'string' ? message.trim() : ''
+  if (!msg) return
+
+  toastMessage.value = msg
+  toastOpen.value = true
+  if (toastTimer) window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => {
+    toastOpen.value = false
+    toastTimer = window.setTimeout(() => {
+      toastMessage.value = ''
+      toastTimer = null
+    }, 200)
+  }, 1600)
+}
+
+function onToastShow(e) {
+  showToast(e?.detail?.message)
+}
+
+function emitFavoritesChanged(detail) {
+  window.dispatchEvent(new CustomEvent('favorites:changed', { detail: { ...(detail || {}), source: 'layout' } }))
+}
+
+function onFavoritesChanged(e) {
+  const detail = e?.detail || {}
+  if (detail?.source === 'layout') return
+  if (detail && typeof detail === 'object' && detail.map && typeof detail.map === 'object') {
+    favoriteIdBySongName.value = detail.map
+    return
+  }
+  const songName = typeof detail?.songName === 'string' ? detail.songName : ''
+  if (!songName) return
+  const id = detail?.id
+  const next = { ...(favoriteIdBySongName.value || {}) }
+  if (id == null) delete next[songName]
+  else next[songName] = id
+  favoriteIdBySongName.value = next
+}
+
 const activeLyricItem = computed(() => {
   const arr = lyricItems.value
   if (!Array.isArray(arr) || !arr.length) return null
@@ -273,6 +317,37 @@ function openPlayer() {
   router.push(`/player?name=${encodeURIComponent(playerState.value.songName)}`)
 }
 
+function requireAuthOrOpenLogin() {
+  if (isAuthed.value) return true
+  openLogin()
+  return false
+}
+
+function onPlayerbarOpen() {
+  if (!requireAuthOrOpenLogin()) return
+  openPlayer()
+}
+
+function onPlayerbarPrev() {
+  if (!requireAuthOrOpenLogin()) return
+  playPrev()
+}
+
+function onPlayerbarToggle() {
+  if (!requireAuthOrOpenLogin()) return
+  togglePlay()
+}
+
+function onPlayerbarNext() {
+  if (!requireAuthOrOpenLogin()) return
+  playNext()
+}
+
+function onPlayerbarFavorite(songName) {
+  if (!requireAuthOrOpenLogin()) return
+  toggleFavorite(songName)
+}
+
 function startPlayback() {
   if (!audioEl.value || !playerState.value.songName) return
   applyAudioSource(playerState.value.songName, false)
@@ -398,11 +473,21 @@ function saveAuth(authToken, authUser) {
 }
 
 function logout() {
+  pausePlayback()
+  try {
+    if (audioEl.value) audioEl.value.currentTime = 0
+  } catch {}
+  playerState.value.currentTime = 0
+  persistPlayerState()
+  emitPlayerState()
+
   token.value = ''
   user.value = null
   localStorage.removeItem('auth_token')
   localStorage.removeItem('auth_user')
   loadFavorites()
+
+  router.push({ name: 'Discover' })
 }
 
 function pickErrorMessage(err) {
@@ -468,6 +553,7 @@ async function submitRegister() {
 }
 
 function onPlayerSet(e) {
+  if (!requireAuthOrOpenLogin()) return
   const detail = e?.detail || {}
   const songName = typeof detail.songName === 'string' ? detail.songName : ''
   const artist = typeof detail.artist === 'string' ? detail.artist : ''
@@ -492,14 +578,17 @@ function onPlayerSet(e) {
 }
 
 function onPlayerToggle() {
+  if (!requireAuthOrOpenLogin()) return
   togglePlay()
 }
 
 function onPlayerPrev() {
+  if (!requireAuthOrOpenLogin()) return
   playPrev()
 }
 
 function onPlayerNext() {
+  if (!requireAuthOrOpenLogin()) return
   playNext()
 }
 
@@ -528,6 +617,7 @@ function seekTo(time, options) {
 }
 
 function onPlayerSeek(e) {
+  if (!requireAuthOrOpenLogin()) return
   seekTo(e?.detail?.time, { persist: e?.detail?.persist })
 }
 
@@ -595,6 +685,7 @@ function isFavorited(songName) {
 async function loadFavorites() {
   if (!token.value) {
     favoriteIdBySongName.value = {}
+    emitFavoritesChanged({ map: {} })
     return
   }
   try {
@@ -607,8 +698,10 @@ async function loadFavorites() {
       map[f.songName] = f.id
     }
     favoriteIdBySongName.value = map
+    emitFavoritesChanged({ map })
   } catch {
     favoriteIdBySongName.value = {}
+    emitFavoritesChanged({ map: {} })
   }
 }
 
@@ -623,22 +716,28 @@ async function toggleFavorite(songName) {
       const next = { ...(favoriteIdBySongName.value || {}) }
       delete next[songName]
       favoriteIdBySongName.value = next
+      emitFavoritesChanged({ songName, id: null })
+      showToast('已取消收藏')
     } else {
       const { data } = await axios.post(`${apiBase}/api/favorites`, { songName }, { headers })
       const id = data?.id
       if (id != null) {
         favoriteIdBySongName.value = { ...(favoriteIdBySongName.value || {}), [songName]: id }
+        emitFavoritesChanged({ songName, id })
+        showToast('已收藏')
       }
     }
   } catch {}
 }
 
 function onProgressDown() {
+  if (!requireAuthOrOpenLogin()) return
   isSeeking.value = true
   seekingTime.value = Number.isFinite(playerState.value.currentTime) ? playerState.value.currentTime : 0
 }
 
 function onProgressInput(e) {
+  if (!requireAuthOrOpenLogin()) return
   const raw = Number(e?.target?.value)
   if (!Number.isFinite(raw)) return
   const nextTime = clamp(
@@ -651,12 +750,14 @@ function onProgressInput(e) {
 }
 
 function onProgressUp() {
+  if (!requireAuthOrOpenLogin()) return
   if (!isSeeking.value) return
   isSeeking.value = false
   seekTo(seekingTime.value)
 }
 
 function onCurrentLyricClick() {
+  if (!requireAuthOrOpenLogin()) return
   const item = activeLyricItem.value
   if (!item) return
   if (!Number.isFinite(item.time)) return
@@ -664,6 +765,12 @@ function onCurrentLyricClick() {
   if (lyricLoading.value) return
   if (lyricError.value) return
   seekTo(item.time)
+}
+
+function onAuthOpen(e) {
+  const mode = typeof e?.detail?.mode === 'string' ? e.detail.mode : 'login'
+  if (mode === 'register') openRegister()
+  else openLogin()
 }
 
 onMounted(() => {
@@ -683,6 +790,9 @@ onMounted(() => {
   window.addEventListener('player:prev', onPlayerPrev)
   window.addEventListener('player:next', onPlayerNext)
   window.addEventListener('player:seek', onPlayerSeek)
+  window.addEventListener('auth:open', onAuthOpen)
+  window.addEventListener('favorites:changed', onFavoritesChanged)
+  window.addEventListener('toast:show', onToastShow)
 
   if (playerState.value.songName) {
     loadLyrics(playerState.value.songName)
@@ -697,6 +807,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('player:prev', onPlayerPrev)
   window.removeEventListener('player:next', onPlayerNext)
   window.removeEventListener('player:seek', onPlayerSeek)
+  window.removeEventListener('auth:open', onAuthOpen)
+  window.removeEventListener('favorites:changed', onFavoritesChanged)
+  window.removeEventListener('toast:show', onToastShow)
+  if (toastTimer) window.clearTimeout(toastTimer)
 })
 </script>
 
@@ -768,6 +882,10 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <div class="toast-bar" :class="{ active: toastOpen }" v-if="toastMessage">
+      <div class="toast-card">{{ toastMessage }}</div>
+    </div>
+
     <div class="main">
       <aside class="sidebar">
         <nav class="nav">
@@ -835,7 +953,7 @@ onBeforeUnmount(() => {
 
     <footer class="playerbar">
       <div class="playerbar-inner">
-        <div class="playerbar-left" @click="openPlayer">
+        <div class="playerbar-left" @click="onPlayerbarOpen">
           <img
             class="playerbar-cover"
             :src="
@@ -870,8 +988,8 @@ onBeforeUnmount(() => {
             <button
               class="playerbar-btn"
               type="button"
-              :disabled="!playerState.queue.length"
-              @click="playPrev"
+              :disabled="isAuthed && !playerState.queue.length"
+              @click="onPlayerbarPrev"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path
@@ -887,8 +1005,8 @@ onBeforeUnmount(() => {
             <button
               class="playerbar-btn primary"
               type="button"
-              :disabled="!playerState.songName"
-              @click="togglePlay"
+              :disabled="isAuthed && !playerState.songName"
+              @click="onPlayerbarToggle"
             >
               <svg v-if="playerState.isPlaying" width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -901,8 +1019,8 @@ onBeforeUnmount(() => {
             <button
               class="playerbar-btn"
               type="button"
-              :disabled="!playerState.queue.length"
-              @click="playNext"
+              :disabled="isAuthed && !playerState.queue.length"
+              @click="onPlayerbarNext"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path
@@ -918,9 +1036,9 @@ onBeforeUnmount(() => {
             <button
               class="playerbar-btn"
               type="button"
-              :disabled="!playerState.songName || !isAuthed"
+              :disabled="isAuthed && !playerState.songName"
               :class="{ active: isFavorited(playerState.songName) }"
-              @click="toggleFavorite(playerState.songName)"
+              @click="onPlayerbarFavorite(playerState.songName)"
             >
               <svg v-if="isFavorited(playerState.songName)" width="18" height="18" viewBox="0 0 24 24">
                 <path
@@ -977,7 +1095,7 @@ onBeforeUnmount(() => {
     </footer>
   </div>
 
-  <div v-if="authOpen" class="modal-mask">
+  <div v-if="authOpen" class="modal-mask" :class="{ active: authOpen }">
     <div class="modal">
       <div class="modal-head">
         <div class="modal-title">{{ authMode === 'login' ? '登录' : '注册' }}</div>
@@ -1039,29 +1157,63 @@ onBeforeUnmount(() => {
 <style scoped>
 .layout {
   min-height: 100vh;
-  background: var(--bg);
+  background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
   color: var(--text);
   display: flex;
   flex-direction: column;
 }
 
 .topbar {
-  height: 64px;
+  height: 70px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 0 64px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: rgba(var(--panel), 0.95);
+  backdrop-filter: blur(20px);
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 100;
+  box-shadow: var(--shadow);
+}
+
+.toast-bar {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translate(-50%, -10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: var(--transition-fast);
+  z-index: 200;
+  padding: 12px 16px;
+  width: min(520px, calc(100vw - 32px));
+}
+
+.toast-bar.active {
+  opacity: 1;
+  transform: translate(-50%, 10px);
+}
+
+.toast-card {
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-hover);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 14px;
+  text-align: center;
 }
 
 .topbar-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 20px;
   min-width: 520px;
 }
 
@@ -1070,63 +1222,96 @@ onBeforeUnmount(() => {
   align-items: center;
   cursor: pointer;
   user-select: none;
+  transition: var(--transition);
+}
+
+.brand:hover {
+  transform: scale(1.05);
 }
 
 .brand-logo {
-  height: 28px;
+  height: 32px;
   width: auto;
   display: block;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 
 .topbar-search {
   flex: 1;
+  max-width: 400px;
+}
+
+.input {
+  width: 100%;
+  height: 42px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  padding: 0 20px;
+  outline: none;
+  transition: var(--transition);
+  font-size: 14px;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--border-focus);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
 }
 
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.input {
-  width: 100%;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text);
-  padding: 0 12px;
-  outline: none;
-}
-
-.input::placeholder {
-  color: var(--muted);
+  gap: 12px;
 }
 
 .btn {
-  height: 34px;
-  border-radius: 12px;
+  height: 38px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
-  padding: 0 12px;
+  padding: 0 16px;
   cursor: pointer;
+  transition: var(--transition);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
 }
 
 .btn.primary {
-  background: var(--accent);
+  background: var(--accent-gradient);
   color: white;
   border-color: transparent;
 }
 
+.btn.primary:hover {
+  background: linear-gradient(135deg, var(--accent-hover) 0%, #ff8585 100%);
+}
+
 .btn.ghost {
-  background: transparent;
+  background: #f5f1e8;
+  border-color: transparent;
+  color: #1d1d1d;
+}
+
+.btn.ghost:hover {
+  background: #fff9ef;
+  color: #1d1d1d;
 }
 
 .icon-btn {
-  height: 34px;
-  width: 34px;
-  border-radius: 12px;
+  height: 38px;
+  width: 38px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
@@ -1134,14 +1319,29 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: var(--transition);
+}
+
+.icon-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
 }
 
 .user {
   position: relative;
-  height: 34px;
+  height: 38px;
   display: flex;
   align-items: center;
   gap: 10px;
+  cursor: pointer;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  transition: var(--transition);
+}
+
+.user:hover {
+  background: var(--card-hover);
 }
 
 .user-name {
@@ -1149,64 +1349,83 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .avatar {
-  height: 34px;
-  width: 34px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  height: 32px;
+  width: 32px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--border);
   display: block;
   object-fit: cover;
+  transition: var(--transition);
+}
+
+.user:hover .avatar {
+  border-color: var(--accent);
 }
 
 .user-menu {
   position: absolute;
   right: 0;
-  top: 32px;
+  top: calc(100% + 2px);
   display: none;
+  z-index: 1000;
 }
 
 .user:hover .user-menu {
   display: block;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .menu-card {
-  width: 220px;
-  padding: 10px;
+  width: 240px;
+  padding: 12px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  backdrop-filter: blur(20px);
 }
 
 .menu-btn {
   width: 100%;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--panel);
+  height: 40px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--text);
   cursor: pointer;
+  transition: var(--transition);
+  padding: 0 12px;
+  text-align: left;
+  font-size: 14px;
 }
 
 .menu-btn:hover {
+  background: var(--bg-secondary);
   border-color: var(--accent);
+  color: var(--accent);
 }
 
 .main {
   flex: 1;
   display: flex;
   min-height: 0;
+  padding: 0 40px;
 }
 
 .sidebar {
-  width: 220px;
+  width: 240px;
   border-right: 1px solid var(--border);
-  padding: 16px 12px;
+  padding: 20px 16px;
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .nav {
@@ -1218,24 +1437,31 @@ onBeforeUnmount(() => {
 .nav-item {
   display: flex;
   align-items: center;
-  height: 40px;
-  padding: 0 12px;
-  border-radius: 12px;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius);
   color: var(--text);
   text-decoration: none;
   background: transparent;
   border: 1px solid transparent;
+  transition: var(--transition);
+  font-weight: 500;
+  font-size: 14px;
 }
 
 .nav-item:hover {
-  background: var(--card);
+  background: var(--card-hover);
   border-color: var(--border);
+  transform: translateX(4px);
 }
 
 .nav-item.active {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: linear-gradient(135deg, 
+    color-mix(in srgb, var(--accent) 15%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 5%, transparent) 100%);
+  border-color: var(--accent);
   color: var(--text);
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.2);
 }
 
 .nav-item.nav-parent {
@@ -1244,78 +1470,106 @@ onBeforeUnmount(() => {
 
 .nav-item.nav-parent .caret {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.nav-item.nav-parent:hover .caret {
+  transform: rotate(90deg);
 }
 
 .nav-sub {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-left: 10px;
+  padding-left: 12px;
   margin-top: -2px;
 }
 
 .nav-item.sub {
-  height: 36px;
+  height: 38px;
   font-size: 13px;
   opacity: 0.95;
+  color: var(--text-secondary);
+}
+
+.nav-item.sub:hover {
+  color: var(--text);
 }
 
 .content {
   flex: 1;
-  padding: 18px;
+  padding: 24px;
   overflow: auto;
+  background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
 }
 
 .playerbar {
-  height: 140px;
-  background: var(--panel);
+  height: 100px;
+  background: rgba(var(--panel), 0.95);
   border-top: 1px solid var(--border);
+  backdrop-filter: blur(20px);
 }
 
 .playerbar-inner {
   height: 100%;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(280px, 1fr);
-  align-items: stretch;
-  gap: 14px;
-  padding: 0 18px;
-  max-width: 1120px;
+  grid-template-columns: minmax(240px, 1fr) auto minmax(300px, 1fr);
+  align-items: center;
+  gap: 20px;
+  padding: 0 64px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
 .playerbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
   cursor: pointer;
+  transition: var(--transition);
+}
+
+.playerbar-left:hover {
+  transform: translateX(4px);
 }
 
 .playerbar-cover {
-  height: 44px;
-  width: 44px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
+  height: 56px;
+  width: 56px;
+  border-radius: var(--radius);
+  border: 2px solid var(--border);
   object-fit: cover;
   flex: none;
+  transition: var(--transition);
+  box-shadow: var(--shadow-card);
+}
+
+.playerbar-left:hover .playerbar-cover {
+  border-color: var(--accent);
+  transform: scale(1.05);
 }
 
 .playerbar-meta {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .playerbar-title {
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 15px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text);
 }
 
 .playerbar-sub {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 13px;
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1324,27 +1578,28 @@ onBeforeUnmount(() => {
 .playerbar-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
 .playerbar-current-lyric {
-  height: 40px;
-  width: 300px;
+  height: 44px;
+  width: 320px;
   max-width: 34vw;
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
-  padding: 0 12px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 13px;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
   user-select: none;
+  transition: var(--transition);
 }
 
 .playerbar-current-lyric.disabled {
@@ -1360,13 +1615,13 @@ onBeforeUnmount(() => {
 .playerbar-buttons {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .playerbar-btn {
-  height: 40px;
-  width: 40px;
-  border-radius: 12px;
+  height: 44px;
+  width: 44px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
@@ -1374,34 +1629,47 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: var(--transition);
+  font-size: 16px;
 }
 
 .playerbar-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
 }
 
 .playerbar-btn.primary {
-  background: var(--accent);
+  background: var(--accent-gradient);
   border-color: transparent;
   color: #fff;
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.3);
+}
+
+.playerbar-btn.primary:hover {
+  background: linear-gradient(135deg, var(--accent-hover) 0%, #ff8585 100%);
+  box-shadow: 0 6px 16px rgba(255, 78, 78, 0.4);
 }
 
 .playerbar-btn.active {
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .playerbar-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .playerbar-right {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   justify-content: center;
-  padding: 12px 0;
+  padding: 8px 0;
 }
 
 .playerbar-progress {
@@ -1414,14 +1682,37 @@ onBeforeUnmount(() => {
 
 .playerbar-range {
   width: 100%;
+  height: 6px;
   accent-color: var(--accent);
+  background: var(--border);
+  border-radius: var(--radius-full);
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.playerbar-range::-webkit-slider-thumb {
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(255, 78, 78, 0.4);
+  transition: var(--transition);
+}
+
+.playerbar-range::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
 }
 
 .playerbar-time {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .playerbar-audio {
@@ -1443,12 +1734,21 @@ onBeforeUnmount(() => {
 .modal-mask {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, #000 50%, transparent);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(20px);
   z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18px;
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  transition: var(--transition);
+}
+
+.modal-mask.active {
+  opacity: 1;
+  visibility: visible;
 }
 
 .modal {
@@ -1456,86 +1756,127 @@ onBeforeUnmount(() => {
   max-width: 100%;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-  padding: 14px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-hover);
+  padding: 24px;
+  transform: scale(0.9);
+  transition: var(--transition);
+}
+
+.modal-mask.active .modal {
+  transform: scale(1);
 }
 
 .modal-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 20px;
 }
 
 .modal-title {
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--text);
 }
 
 .modal-close {
-  height: 34px;
-  width: 34px;
-  border-radius: 12px;
+  height: 38px;
+  width: 38px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
   font-size: 18px;
   line-height: 1;
+  transition: var(--transition);
+}
+
+.modal-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: rotate(90deg);
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .field .label {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-weight: 500;
 }
 
 .field-input {
   width: 100%;
-  height: 38px;
-  border-radius: 12px;
+  height: 44px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
-  padding: 0 12px;
+  padding: 0 16px;
   outline: none;
+  transition: var(--transition);
+  font-size: 14px;
+}
+
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--border-focus);
 }
 
 .form-error {
-  color: #d44;
+  color: #ff6b6b;
   font-size: 12px;
+  margin-top: 4px;
 }
 
 .submit-btn {
-  height: 40px;
-  border-radius: 12px;
+  height: 44px;
+  border-radius: var(--radius);
   border: 1px solid transparent;
-  background: var(--accent);
+  background: var(--accent-gradient);
   color: #fff;
   cursor: pointer;
+  transition: var(--transition);
+  font-weight: 500;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.3);
+}
+
+.submit-btn:hover {
+  background: linear-gradient(135deg, var(--accent-hover) 0%, #ff8585 100%);
+  box-shadow: 0 6px 16px rgba(255, 78, 78, 0.4);
+  transform: translateY(-1px);
 }
 
 .submit-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .switch-btn {
-  height: 40px;
-  border-radius: 12px;
+  height: 44px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text);
   cursor: pointer;
+  transition: var(--transition);
+  font-weight: 500;
+  font-size: 14px;
 }
 
 .switch-btn:hover {
   border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 </style>

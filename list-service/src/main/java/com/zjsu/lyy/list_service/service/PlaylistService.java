@@ -12,6 +12,7 @@ import com.zjsu.lyy.list_service.repository.PlaylistRepository;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +67,15 @@ public class PlaylistService {
 	@Transactional(readOnly = true)
 	public List<PlaylistResponse> listPlaylistsByPlaylistName(String playlistName) {
 		return playlistRepository.findAllByPlaylistNameOrderByIdDesc(playlistName)
+				.stream()
+				.map(PlaylistService::toResponse)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<PlaylistResponse> listPublicPlaylists(int limit) {
+		int size = Math.max(1, Math.min(limit, 50));
+		return playlistRepository.findAllByIsPublicTrueOrderByIdDesc(PageRequest.of(0, size))
 				.stream()
 				.map(PlaylistService::toResponse)
 				.toList();

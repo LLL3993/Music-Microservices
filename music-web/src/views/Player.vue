@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -216,20 +216,41 @@ watch(
 watch(
   () => currentTime.value,
   (t) => {
-    const arr = lyricItems.value
-    if (!arr.length) return
-    let idx = 0
-    for (let i = 0; i < arr.length; i += 1) {
-      if (arr[i].time <= t + 0.05) idx = i
-      else break
-    }
-    activeLine.value = idx
+    updateActiveLyricLine(t)
   },
 )
+
+function updateActiveLyricLine(time) {
+  const arr = lyricItems.value
+  if (!arr.length) return
+  let idx = 0
+  for (let i = 0; i < arr.length; i += 1) {
+    if (arr[i].time <= time + 0.05) idx = i
+    else break
+  }
+  activeLine.value = idx
+  
+  nextTick(() => {
+    const container = document.querySelector('.lyrics')
+    const activeElement = document.querySelector('.lyric-line.active')
+    if (container && activeElement) {
+      const containerRect = container.getBoundingClientRect()
+      const activeRect = activeElement.getBoundingClientRect()
+      const delta = activeRect.top - containerRect.top
+      const target =
+        container.scrollTop +
+        delta -
+        container.clientHeight / 2 +
+        activeRect.height / 2
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
+      container.scrollTo({ top: clamp(target, 0, maxScrollTop), behavior: 'smooth' })
+    }
+  })
+}
 </script>
 
 <template>
-  <div class="mask">
+  <div class="mask active animate-fade-in">
     <div class="panel">
       <button class="close" type="button" @click="onClose">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -340,72 +361,112 @@ watch(
   position: fixed;
   inset: 0;
   z-index: 999;
-  background: radial-gradient(
-      1200px 600px at 30% 20%,
-      color-mix(in srgb, var(--accent) 18%, transparent),
-      transparent 70%
+  background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 10%, var(--bg)) 0%,
+      var(--bg) 50%,
+      color-mix(in srgb, var(--accent) 5%, var(--bg)) 100%
     ),
-    var(--bg);
+    radial-gradient(
+      800px 400px at 30% 20%,
+      color-mix(in srgb, var(--accent) 20%, transparent),
+      transparent 60%
+    );
   display: flex;
   align-items: stretch;
   justify-content: stretch;
+  backdrop-filter: blur(20px);
+  opacity: 0;
+  visibility: hidden;
+  transition: var(--transition);
+}
+
+.mask.active {
+  opacity: 1;
+  visibility: visible;
 }
 
 .panel {
   flex: 1;
   position: relative;
-  padding: 22px;
+  padding: 32px;
+  background: color-mix(in srgb, var(--bg) 12%, transparent);
+  backdrop-filter: blur(20px);
+  transform: translateY(20px);
+  transition: var(--transition);
+}
+
+.mask.active .panel {
+  transform: translateY(0);
 }
 
 .close {
   position: absolute;
-  top: 18px;
-  right: 18px;
-  height: 40px;
-  width: 40px;
-  border-radius: 12px;
+  top: 24px;
+  right: 24px;
+  height: 44px;
+  width: 44px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
   cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
 }
 
 .body {
   height: 100%;
   display: grid;
   grid-template-columns: minmax(420px, 840px) 1fr;
-  gap: 18px;
-  padding-top: 34px;
+  gap: 24px;
+  padding-top: 44px;
 }
 
 .left {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 24px;
   min-width: 0;
 }
 
 .cover-wrap {
-  width: 320px;
-  height: 320px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 10%, var(--card)) 0%,
+    var(--card) 100%
+  );
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto;
-  animation: rotate 20s linear infinite;
+  animation: rotate 25s linear infinite;
   animation-play-state: paused;
+  box-shadow: var(--shadow-card);
+  transition: var(--transition);
+  overflow: hidden;
+}
+
+.cover-wrap:hover {
+  transform: scale(1.02);
+  box-shadow: var(--shadow-hover);
 }
 
 .cover {
-  width: 280px;
-  height: 280px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
   display: block;
   object-fit: cover;
+  transition: var(--transition);
+  filter: brightness(1.1) contrast(1.1);
 }
 
 .cover-wrap.playing {
@@ -424,111 +485,202 @@ watch(
 .card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  padding: 16px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+  transition: var(--transition);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-hover);
 }
 
 .lyrics {
-  height: 260px;
+  height: clamp(320px, 42vh, 460px);
   overflow-y: auto;
   scrollbar-gutter: stable;
-  width: 100%;
-  max-width: none;
+  width: clamp(220px, 60%, 340px);
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 8px;
 }
 
 .lyrics .hint {
-  color: var(--muted);
-  font-size: 12px;
-  padding: 6px 4px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 8px 4px 12px;
+  text-align: center;
+  font-weight: 500;
 }
 
 .lyric-line {
-  padding: 8px 10px;
-  border-radius: 12px;
-  color: var(--muted);
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
   cursor: pointer;
+  transition: var(--transition);
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+
+.lyric-line:hover {
+  background: var(--card-hover);
+  transform: translateX(4px);
 }
 
 .lyric-line.active {
   color: var(--text);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 20%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 5%, transparent) 100%
+  );
+  border-color: var(--accent);
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.2);
+  transform: translateX(8px);
 }
 
 .right {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 24px;
   min-width: 0;
 }
 
 .song .name {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+  line-height: 1.3;
 }
 
 .song .artist {
-  margin-top: 6px;
-  color: var(--muted);
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .controls {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
 }
 
 .btn-row {
   display: flex;
-  gap: 10px;
-}
-
-.ctl {
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  padding: 0 14px;
-  cursor: pointer;
-}
-
-.ctl.icon {
-  width: 44px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
+  gap: 12px;
   justify-content: center;
 }
 
+.ctl {
+  height: 48px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.ctl.icon {
+  width: 48px;
+  padding: 0;
+}
+
+.ctl:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
 .ctl.primary {
-  background: var(--accent);
+  background: var(--accent-gradient);
   border-color: transparent;
   color: #fff;
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.3);
+}
+
+.ctl.primary:hover {
+  background: linear-gradient(135deg, var(--accent-hover) 0%, #ff8585 100%);
+  box-shadow: 0 6px 16px rgba(255, 78, 78, 0.4);
+  transform: translateY(-2px);
 }
 
 .progress {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .range {
   width: 100%;
+  height: 6px;
   accent-color: var(--accent);
+  background: var(--border);
+  border-radius: var(--radius-full);
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(255, 78, 78, 0.4);
+  transition: var(--transition);
+}
+
+.range::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
+}
+
+.range::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 8px rgba(255, 78, 78, 0.4);
+  transition: var(--transition);
+}
+
+.range::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
 }
 
 .time {
   display: flex;
   justify-content: space-between;
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .placeholder .hint {
-  color: var(--muted);
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 @media (max-width: 980px) {

@@ -48,6 +48,11 @@ public class PlaylistController {
 		return playlistService.listPlaylistsByPlaylistName(playlistName);
 	}
 
+	@GetMapping("/public")
+	public List<PlaylistResponse> listPublic(@RequestParam(defaultValue = "4") int limit) {
+		return playlistService.listPublicPlaylists(limit);
+	}
+
 	@PutMapping("/{id}")
 	public PlaylistResponse updatePlaylist(@PathVariable Long id, @Valid @RequestBody UpdatePlaylistRequest request) {
 		return playlistService.updatePlaylist(id, request);

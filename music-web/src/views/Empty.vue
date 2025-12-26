@@ -5,7 +5,7 @@ const router = useRouter()
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="wrap animate-fade-in">
     <div class="card">
       <div class="code">404</div>
       <div class="title">页面不存在</div>
@@ -70,4 +70,3 @@ const router = useRouter()
   border-color: var(--accent);
 }
 </style>
-

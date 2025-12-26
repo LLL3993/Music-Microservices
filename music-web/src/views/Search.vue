@@ -1,7 +1,8 @@
 <script setup>
 import axios from 'axios'
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import OverlayMask from '../components/OverlayMask.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -23,12 +24,38 @@ const keyword = ref('')
 const loading = ref(false)
 const error = ref('')
 const results = ref([])
-const notice = ref('')
 const playlists = ref([])
 const playlistsLoaded = ref(false)
-const selectedPlaylistByKey = ref({})
 const favoritesLoaded = ref(false)
 const favoriteIdBySongName = ref({})
+
+const addModalOpen = ref(false)
+const addModalSongName = ref('')
+const addModalSelectedPlaylists = ref([])
+const addModalSubmitting = ref(false)
+const addModalError = ref('')
+
+function emitFavoritesChanged(detail) {
+  window.dispatchEvent(new CustomEvent('favorites:changed', { detail: { ...(detail || {}), source: 'search' } }))
+}
+
+function onFavoritesChanged(e) {
+  const detail = e?.detail || {}
+  if (detail?.source === 'search') return
+  if (detail && typeof detail === 'object' && detail.map && typeof detail.map === 'object') {
+    favoriteIdBySongName.value = detail.map
+    favoritesLoaded.value = true
+    return
+  }
+  const songName = typeof detail?.songName === 'string' ? detail.songName : ''
+  if (!songName) return
+  const id = detail?.id
+  const next = { ...(favoriteIdBySongName.value || {}) }
+  if (id == null) delete next[songName]
+  else next[songName] = id
+  favoriteIdBySongName.value = next
+  favoritesLoaded.value = true
+}
 
 watch(
   () => route.query.q,
@@ -47,6 +74,14 @@ function pickErrorMessage(err) {
 
 function getAuthToken() {
   return localStorage.getItem('auth_token') || ''
+}
+
+function requestLogin() {
+  window.dispatchEvent(new CustomEvent('auth:open', { detail: { mode: 'login' } }))
+}
+
+function showToast(message) {
+  window.dispatchEvent(new CustomEvent('toast:show', { detail: { message } }))
 }
 
 function onEnter() {
@@ -109,6 +144,7 @@ async function loadFavorites() {
   if (!authToken) {
     favoriteIdBySongName.value = {}
     favoritesLoaded.value = false
+    emitFavoritesChanged({ map: {} })
     return
   }
 
@@ -123,18 +159,12 @@ async function loadFavorites() {
     }
     favoriteIdBySongName.value = map
     favoritesLoaded.value = true
+    emitFavoritesChanged({ map })
   } catch {
     favoriteIdBySongName.value = {}
     favoritesLoaded.value = false
+    emitFavoritesChanged({ map: {} })
   }
-}
-
-function setNotice(value) {
-  notice.value = value
-  if (!value) return
-  window.setTimeout(() => {
-    if (notice.value === value) notice.value = ''
-  }, 1800)
 }
 
 function isFavorited(songName) {
@@ -144,7 +174,8 @@ function isFavorited(songName) {
 async function toggleFavorite(songName) {
   const authToken = getAuthToken()
   if (!authToken) {
-    setNotice('请先登录')
+    showToast('请先登录')
+    requestLogin()
     return
   }
   try {
@@ -155,43 +186,99 @@ async function toggleFavorite(songName) {
       const next = { ...(favoriteIdBySongName.value || {}) }
       delete next[songName]
       favoriteIdBySongName.value = next
-      setNotice('已取消收藏')
+      emitFavoritesChanged({ songName, id: null })
+      showToast('已取消收藏')
     } else {
       const { data } = await axios.post(`${apiBase}/api/favorites`, { songName }, { headers })
       const id = data?.id
       if (id != null) {
         favoriteIdBySongName.value = { ...(favoriteIdBySongName.value || {}), [songName]: id }
+        emitFavoritesChanged({ songName, id })
       }
-      setNotice('已收藏')
+      showToast('已收藏')
     }
   } catch (err) {
-    setNotice(pickErrorMessage(err))
+    showToast(pickErrorMessage(err))
   }
 }
 
-async function addToPlaylist(songName, key) {
+async function openAddToPlaylistModal(songName) {
   const authToken = getAuthToken()
   if (!authToken) {
-    setNotice('请先登录')
+    showToast('请先登录')
+    requestLogin()
     return
   }
 
-  const playlistName = selectedPlaylistByKey.value[key] || ''
-  if (!playlistName) {
-    setNotice('请选择歌单')
+  addModalError.value = ''
+  if (!playlistsLoaded.value) await loadPlaylists()
+  addModalSongName.value = typeof songName === 'string' ? songName : ''
+  addModalSelectedPlaylists.value = []
+  addModalOpen.value = true
+}
+
+function closeAddModal() {
+  addModalOpen.value = false
+  addModalSubmitting.value = false
+  addModalError.value = ''
+  addModalSongName.value = ''
+  addModalSelectedPlaylists.value = []
+}
+
+async function submitAddToPlaylists() {
+  const authToken = getAuthToken()
+  if (!authToken) {
+    showToast('请先登录')
+    closeAddModal()
+    requestLogin()
     return
   }
 
+  const songName = addModalSongName.value
+  if (!songName) {
+    closeAddModal()
+    return
+  }
+
+  const picked = Array.isArray(addModalSelectedPlaylists.value) ? addModalSelectedPlaylists.value : []
+  const playlistNames = Array.from(new Set(picked.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)))
+
+  if (!playlistNames.length) {
+    addModalError.value = '请选择至少一个歌单'
+    return
+  }
+
+  addModalSubmitting.value = true
+  addModalError.value = ''
   try {
     const headers = { Authorization: `Bearer ${authToken}` }
-    await axios.post(
-      `${apiBase}/api/playlist-details`,
-      { playlistName, songName },
-      { headers },
+    const settled = await Promise.allSettled(
+      playlistNames.map((playlistName) =>
+        axios.post(
+          `${apiBase}/api/playlist-details`,
+          { playlistName, songName },
+          { headers },
+        ),
+      ),
     )
-    setNotice('已加入歌单')
-  } catch (err) {
-    setNotice(pickErrorMessage(err))
+
+    const successCount = settled.filter((x) => x.status === 'fulfilled').length
+    const firstReject = settled.find((x) => x.status === 'rejected')
+
+    if (successCount > 0) {
+      showToast(successCount === 1 ? '已加入歌单' : `已加入 ${successCount} 个歌单`)
+      closeAddModal()
+      return
+    }
+
+    if (firstReject?.status === 'rejected') {
+      addModalError.value = pickErrorMessage(firstReject.reason)
+      return
+    }
+
+    addModalError.value = '加入失败'
+  } finally {
+    addModalSubmitting.value = false
   }
 }
 
@@ -248,20 +335,28 @@ async function doSearch() {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  window.addEventListener('favorites:changed', onFavoritesChanged)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('favorites:changed', onFavoritesChanged)
+})
 </script>
 
 <template>
-  <div class="page">
+  <div class="page animate-fade-in">
     <div class="card">
       <div class="title">热门搜索</div>
-      <div class="notice" v-if="notice">{{ notice }}</div>
       <div class="tags">
         <button
-          v-for="t in hotTags"
+          v-for="(t, index) in hotTags"
           :key="t"
-          class="tag"
+          class="tag hover-lift"
           type="button"
           @click="selectHotTag(t)"
+          :style="{ animationDelay: `${index * 0.05}s` }"
         >
           {{ t }}
         </button>
@@ -288,7 +383,7 @@ async function doSearch() {
         <div class="empty" v-else-if="error">{{ error }}</div>
         <div class="empty" v-else-if="keyword && results.length === 0">暂无结果</div>
 
-        <div v-for="(s, idx) in results" :key="s.id ?? `${s.songName}-${idx}`" class="item">
+        <div v-for="(s, idx) in results" :key="s.id ?? `${s.songName}-${idx}`" class="item hover-lift" :style="{ animationDelay: `${idx * 0.05}s` }">
           <img
             class="cover"
             src="https://dummyimage.com/320x100/999999/ff4400.png&text=MUSIC"
@@ -316,21 +411,9 @@ async function doSearch() {
                 />
               </svg>
             </button>
-            <div class="add-row">
-              <select
-                class="select"
-                :value="selectedPlaylistByKey[s.id ?? `${s.songName}-${idx}`] || ''"
-                @change="selectedPlaylistByKey[s.id ?? `${s.songName}-${idx}`] = $event.target.value"
-              >
-                <option value="">选择歌单</option>
-                <option v-for="p in playlists" :key="p.id" :value="p.playlistName">
-                  {{ p.playlistName }}
-                </option>
-              </select>
-              <button class="action-btn" type="button" @click="addToPlaylist(s.songName, s.id ?? `${s.songName}-${idx}`)">
-                加入
-              </button>
-            </div>
+            <button class="action-btn" type="button" @click="openAddToPlaylistModal(s.songName)">
+              加入歌单
+            </button>
             <button class="play" type="button" @click="playSong(s.songName, s.artist)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
@@ -340,6 +423,43 @@ async function doSearch() {
         </div>
       </div>
     </div>
+
+    <OverlayMask v-model:visible="addModalOpen">
+      <div class="add-modal">
+        <div class="add-modal-head">
+          <div class="add-modal-title">加入歌单</div>
+          <button class="modal-close" type="button" @click="closeAddModal">×</button>
+        </div>
+
+        <div class="add-modal-sub" v-if="addModalSongName">歌曲：{{ addModalSongName }}</div>
+
+        <div class="add-modal-body">
+          <div v-if="!playlists.length" class="add-empty">
+            暂无歌单，请先去“歌单”页面创建
+          </div>
+          <div v-else class="playlist-checks">
+            <label v-for="p in playlists" :key="p.id ?? p.playlistName" class="check-item">
+              <input
+                class="checkbox"
+                type="checkbox"
+                :value="p.playlistName"
+                v-model="addModalSelectedPlaylists"
+              />
+              <span class="check-text">{{ p.playlistName }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-error" v-if="addModalError">{{ addModalError }}</div>
+
+        <div class="add-modal-actions">
+          <button class="btn-lite" type="button" :disabled="addModalSubmitting" @click="closeAddModal">取消</button>
+          <button class="btn-primary" type="button" :disabled="addModalSubmitting" @click="submitAddToPlaylists">
+            {{ addModalSubmitting ? '加入中...' : '确认加入' }}
+          </button>
+        </div>
+      </div>
+    </OverlayMask>
   </div>
 </template>
 
@@ -347,31 +467,31 @@ async function doSearch() {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
 }
 
 .card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  padding: 16px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+  transition: var(--transition);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-hover);
 }
 
 .title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.notice {
-  font-size: 12px;
-  color: var(--muted);
-  margin: -4px 0 12px;
+  margin-bottom: 12px;
+  color: var(--text);
 }
 
 .sub {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-weight: 400;
   margin-left: 8px;
 }
@@ -379,73 +499,100 @@ async function doSearch() {
 .tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .tag {
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text);
-  height: 32px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 16px;
   cursor: pointer;
+  transition: var(--transition);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .tag:hover {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-color: var(--accent);
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  transform: translateY(-1px);
 }
 
 .search-row {
   display: flex;
-  gap: 10px;
+  gap: 12px;
 }
 
 .input {
   width: 100%;
-  height: 38px;
-  border-radius: 12px;
+  height: 44px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
-  padding: 0 12px;
+  padding: 0 16px;
   outline: none;
+  transition: var(--transition);
+  font-size: 14px;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--border-focus);
 }
 
 .input::placeholder {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .items {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .empty {
-  color: var(--muted);
-  font-size: 12px;
-  padding: 10px 2px;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 16px 4px;
+  text-align: center;
+  font-weight: 500;
 }
 
 .item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px;
-  border-radius: 12px;
+  gap: 16px;
+  padding: 12px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--panel);
+  transition: var(--transition);
+}
+
+.item:hover {
+  border-color: var(--accent);
+  background: var(--card-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
 }
 
 .cover {
-  width: 54px;
-  height: 54px;
-  border-radius: 12px;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   object-fit: cover;
+  transition: var(--transition);
+}
+
+.item:hover .cover {
+  transform: scale(1.05);
 }
 
 .meta {
@@ -458,18 +605,21 @@ async function doSearch() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 15px;
+  color: var(--text);
 }
 
 .artist {
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 13px;
+  color: var(--text-secondary);
   margin-top: 4px;
+  font-weight: 500;
 }
 
 .play {
-  height: 36px;
-  width: 36px;
-  border-radius: 12px;
+  height: 40px;
+  width: 40px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--accent);
@@ -477,16 +627,22 @@ async function doSearch() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: var(--transition);
+  font-size: 16px;
 }
 
 .play:hover {
   border-color: var(--accent);
+  background: var(--accent-gradient);
+  color: #fff;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.3);
 }
 
 .icon-action {
-  height: 36px;
-  width: 36px;
-  border-radius: 12px;
+  height: 40px;
+  width: 40px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
@@ -494,49 +650,192 @@ async function doSearch() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: var(--transition);
+  font-size: 16px;
 }
 
 .icon-action:hover {
   border-color: var(--accent);
   color: var(--accent);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-hover);
+}
+
+.icon-action.fav {
+  color: var(--accent);
+}
+
+.icon-action.fav:hover {
+  background: var(--accent-gradient);
+  color: #fff;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.3);
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .action-btn {
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 12px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
   cursor: pointer;
   white-space: nowrap;
+  transition: var(--transition);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .action-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
 }
 
-.add-row {
+.add-modal {
+  width: min(520px, calc(100vw - 40px));
+  padding: 18px 18px 16px;
+}
+
+.add-modal-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
-.select {
-  height: 32px;
+.add-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal-close {
+  height: 34px;
+  width: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.add-modal-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.add-modal-body {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  padding: 12px;
+  max-height: min(52vh, 340px);
+  overflow: auto;
+}
+
+.add-empty {
+  padding: 10px 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.playlist-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--card);
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.check-item:hover {
+  border-color: var(--accent);
+  background: var(--card-hover);
+}
+
+.checkbox {
+  height: 16px;
+  width: 16px;
+  accent-color: var(--accent);
+}
+
+.check-text {
+  font-size: 14px;
   color: var(--text);
-  padding: 0 10px;
-  outline: none;
-  max-width: 160px;
+  font-weight: 600;
+}
+
+.form-error {
+  margin-top: 10px;
+  color: #d44;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.add-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.btn-lite {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: var(--transition);
+  font-weight: 600;
+}
+
+.btn-lite:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: var(--shadow-hover);
+}
+
+.btn-primary {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: var(--accent-gradient);
+  color: #fff;
+  cursor: pointer;
+  transition: var(--transition);
+  font-weight: 700;
+}
+
+.btn-primary:disabled,
+.btn-lite:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

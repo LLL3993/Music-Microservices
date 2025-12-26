@@ -340,7 +340,7 @@ onMounted(loadAll)
 </script>
 
 <template>
-  <div class="page">
+  <div class="page animate-fade-in">
     <div class="card head">
       <div class="title">{{ isUserView ? '用户管理' : isSongView ? '音乐管理' : '管理界面' }}</div>
       <div class="sub">用户：{{ userCount }}，音乐：{{ songCount }}</div>
@@ -593,6 +593,21 @@ onMounted(loadAll)
 .btn.small {
   height: 32px;
   padding: 0 10px;
+}
+
+.pager {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.pager-info {
+  min-width: 92px;
+  text-align: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .link {

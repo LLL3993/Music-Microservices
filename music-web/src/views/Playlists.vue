@@ -1,9 +1,10 @@
 <script setup>
 import axios from 'axios'
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
+const route = useRoute()
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
 const defaultPlaylistCover = 'https://dummyimage.com/200x200/999999/ff4400.png&text=PLAYLIST'
@@ -23,7 +24,15 @@ const createError = ref('')
 const createForm = ref({
   playlistName: '',
   description: '',
+  isPublic: true,
 })
+
+const publicUpdating = ref(false)
+const publicError = ref('')
+
+function showToast(message) {
+  window.dispatchEvent(new CustomEvent('toast:show', { detail: { message } }))
+}
 
 function baseUrl() {
   const b = import.meta.env.BASE_URL
@@ -51,6 +60,10 @@ function getAuthHeader() {
   const token = localStorage.getItem('auth_token') || ''
   if (!token) return null
   return { Authorization: `Bearer ${token}` }
+}
+
+function requestLogin() {
+  window.dispatchEvent(new CustomEvent('auth:open', { detail: { mode: 'login' } }))
 }
 
 async function getArtistBySongName(songName) {
@@ -98,6 +111,11 @@ async function loadPlaylists() {
   try {
     const { data } = await axios.get(`${apiBase}/api/playlists/username`, { headers })
     playlists.value = Array.isArray(data) ? data : []
+    const picked = typeof route.query.playlistName === 'string' ? route.query.playlistName.trim() : ''
+    if (picked && !selectedPlaylist.value) {
+      const match = playlists.value.find((p) => p?.playlistName === picked)
+      if (match) openPlaylist(match)
+    }
   } catch (err) {
     error.value = pickErrorMessage(err)
     playlists.value = []
@@ -107,6 +125,11 @@ async function loadPlaylists() {
 }
 
 function openCreate() {
+  const headers = getAuthHeader()
+  if (!headers) {
+    requestLogin()
+    return
+  }
   createOpen.value = true
   createError.value = ''
 }
@@ -121,6 +144,7 @@ async function submitCreate() {
   const headers = getAuthHeader()
   if (!headers) {
     createError.value = '请先登录后创建歌单'
+    requestLogin()
     return
   }
 
@@ -136,17 +160,52 @@ async function submitCreate() {
   try {
     await axios.post(
       `${apiBase}/api/playlists`,
-      { playlistName, description, isPublic: true },
+      { playlistName, description, isPublic: Boolean(createForm.value.isPublic) },
       { headers },
     )
     createForm.value.playlistName = ''
     createForm.value.description = ''
+    createForm.value.isPublic = true
     closeCreate()
     await loadPlaylists()
   } catch (err) {
     createError.value = pickErrorMessage(err)
   } finally {
     createSubmitting.value = false
+  }
+}
+
+async function updatePublic(nextPublic) {
+  const playlist = selectedPlaylist.value
+  if (!playlist) return
+
+  const headers = getAuthHeader()
+  if (!headers) {
+    publicError.value = '请先登录后操作'
+    requestLogin()
+    return
+  }
+
+  const id = playlist?.id
+  const playlistName = typeof playlist?.playlistName === 'string' ? playlist.playlistName : ''
+  if (id == null || !playlistName) return
+
+  publicUpdating.value = true
+  publicError.value = ''
+  try {
+    const { data } = await axios.put(
+      `${apiBase}/api/playlists/${id}`,
+      { playlistName, description: playlist?.description ?? null, isPublic: Boolean(nextPublic) },
+      { headers },
+    )
+    const isPublic = Boolean(data?.isPublic)
+    selectedPlaylist.value = { ...(selectedPlaylist.value || {}), isPublic }
+    playlists.value = playlists.value.map((p) => (p?.id === id ? { ...(p || {}), isPublic } : p))
+    showToast(isPublic ? '已设为公开' : '已设为私密')
+  } catch (err) {
+    publicError.value = pickErrorMessage(err)
+  } finally {
+    publicUpdating.value = false
   }
 }
 
@@ -188,7 +247,14 @@ async function openPlaylist(playlist) {
       params: { playlistName: playlist.playlistName },
       headers,
     })
-    details.value = Array.isArray(data) ? data : []
+    const arr = Array.isArray(data) ? data : []
+    arr.sort((a, b) => {
+      const ai = Number(a?.id)
+      const bi = Number(b?.id)
+      if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
+      return 0
+    })
+    details.value = arr
   } catch (err) {
     detailError.value = pickErrorMessage(err)
     details.value = []
@@ -219,11 +285,22 @@ function backToList() {
   detailError.value = ''
 }
 
+watch(
+  () => route.query.playlistName,
+  (n) => {
+    const picked = typeof n === 'string' ? n.trim() : ''
+    if (!picked) return
+    if (!playlists.value.length) return
+    const match = playlists.value.find((p) => p?.playlistName === picked)
+    if (match) openPlaylist(match)
+  },
+)
+
 onMounted(loadPlaylists)
 </script>
 
 <template>
-  <div class="page">
+  <div class="page animate-fade-in">
     <div class="card">
       <div class="head">
         <div class="title">歌单</div>
@@ -292,6 +369,20 @@ onMounted(loadPlaylists)
           <div class="name">{{ selectedPlaylist.playlistName }}</div>
           <div class="creator">创建者：{{ selectedPlaylist.username }}</div>
           <div class="desc">{{ selectedPlaylist.description || '无描述' }}</div>
+          <div class="public-row">
+            <label class="public-check">
+              <input
+                type="checkbox"
+                class="public-checkbox"
+                :checked="Boolean(selectedPlaylist.isPublic)"
+                :disabled="publicUpdating"
+                @change="updatePublic($event.target.checked)"
+              />
+              <span class="public-text">公开</span>
+            </label>
+            <div class="public-hint">{{ selectedPlaylist.isPublic ? '所有人可见' : '仅自己可见' }}</div>
+          </div>
+          <div class="public-error" v-if="publicError">{{ publicError }}</div>
         </div>
       </div>
 
@@ -342,6 +433,13 @@ onMounted(loadPlaylists)
         <div class="field">
           <div class="label">描述</div>
           <input v-model="createForm.description" class="field-input" placeholder="可选" />
+        </div>
+        <div class="field">
+          <div class="label">公开</div>
+          <label class="public-check form-public">
+            <input v-model="createForm.isPublic" type="checkbox" class="public-checkbox" />
+            <span class="public-text">允许所有人看到该歌单</span>
+          </label>
         </div>
 
         <div class="form-error" v-if="createError">{{ createError }}</div>
@@ -509,6 +607,54 @@ onMounted(loadPlaylists)
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.public-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.public-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+}
+
+.public-check.form-public {
+  width: fit-content;
+}
+
+.public-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.public-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.public-hint {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.public-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #d44;
+  font-weight: 600;
 }
 
 .detail-items {
