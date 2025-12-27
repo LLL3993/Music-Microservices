@@ -348,9 +348,43 @@ function onPlayerbarFavorite(songName) {
   toggleFavorite(songName)
 }
 
+let pendingPlayRetry = null
+
+function schedulePlayRetry() {
+  if (!audioEl.value) return
+  if (pendingPlayRetry) return
+  const el = audioEl.value
+  const handler = () => {
+    if (!audioEl.value) return
+    pendingPlayRetry = null
+    const p2 = el.play()
+    if (p2 && typeof p2.then === 'function') {
+      p2.then(() => {
+        playerState.value.isPlaying = true
+        persistPlayerState()
+        emitPlayerState()
+      }).catch(() => {})
+    } else {
+      playerState.value.isPlaying = true
+      persistPlayerState()
+      emitPlayerState()
+    }
+  }
+  pendingPlayRetry = handler
+  el.addEventListener('canplay', handler, { once: true })
+  window.setTimeout(() => {
+    if (!audioEl.value) return
+    if (pendingPlayRetry !== handler) return
+    pendingPlayRetry = null
+    el.removeEventListener('canplay', handler)
+  }, 2500)
+}
+
 function startPlayback() {
   if (!audioEl.value || !playerState.value.songName) return
   applyAudioSource(playerState.value.songName, false)
+
+  if (audioEl.value.readyState < 2) schedulePlayRetry()
 
   const p = audioEl.value.play()
   if (p && typeof p.then === 'function') {
@@ -362,6 +396,7 @@ function startPlayback() {
       playerState.value.isPlaying = false
       persistPlayerState()
       emitPlayerState()
+      schedulePlayRetry()
     })
   } else {
     playerState.value.isPlaying = true
@@ -470,6 +505,7 @@ function saveAuth(authToken, authUser) {
   localStorage.setItem('auth_token', token.value)
   localStorage.setItem('auth_user', JSON.stringify(user.value))
   loadFavorites()
+  window.dispatchEvent(new CustomEvent('auth:changed', { detail: { token: token.value, user: user.value } }))
 }
 
 function logout() {
@@ -486,6 +522,7 @@ function logout() {
   localStorage.removeItem('auth_token')
   localStorage.removeItem('auth_user')
   loadFavorites()
+  window.dispatchEvent(new CustomEvent('auth:changed', { detail: { token: '', user: null } }))
 
   router.push({ name: 'Discover' })
 }
@@ -1061,20 +1098,21 @@ onBeforeUnmount(() => {
 
         <div class="playerbar-right">
           <div class="playerbar-progress">
-            <input
-              class="playerbar-range"
-              type="range"
-              min="0"
-              :max="playerState.duration || 0"
-              step="0.01"
-              :value="isSeeking ? seekingTime : playerState.currentTime || 0"
-              :disabled="!playerState.songName || !playerState.duration"
-              @pointerdown="onProgressDown"
-              @pointerup="onProgressUp"
-              @pointercancel="onProgressUp"
-              @change="onProgressUp"
-              @input="onProgressInput"
-            />
+              <input
+                class="playerbar-range"
+                :class="{ seeking: isSeeking }"
+                type="range"
+                min="0"
+                :max="playerState.duration || 0"
+                step="0.01"
+                :value="isSeeking ? seekingTime : playerState.currentTime || 0"
+                :disabled="!playerState.songName || !playerState.duration"
+                @pointerdown="onProgressDown"
+                @pointerup="onProgressUp"
+                @pointercancel="onProgressUp"
+                @change="onProgressUp"
+                @input="onProgressInput"
+              />
             <div class="playerbar-time">
               <span>{{ formatTime(playerState.currentTime) }}</span>
               <span>{{ formatTime(playerState.duration) }}</span>
@@ -1691,6 +1729,10 @@ onBeforeUnmount(() => {
   transition: var(--transition);
 }
 
+.playerbar-range.seeking {
+  background: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
 .playerbar-range::-webkit-slider-thumb {
   appearance: none;
   height: 16px;
@@ -1702,9 +1744,11 @@ onBeforeUnmount(() => {
   transition: var(--transition);
 }
 
-.playerbar-range::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
+@media (hover: hover) and (pointer: fine) {
+  .playerbar-range::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
+  }
 }
 
 .playerbar-time {

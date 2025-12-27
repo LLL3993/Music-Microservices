@@ -90,7 +90,9 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
 	}
 
 	private static boolean isPermitPath(String path) {
-		return "/api/auth/login".equals(path) || "/api/auth/register".equals(path);
+		return "/api/auth/login".equals(path)
+				|| "/api/auth/register".equals(path)
+				|| "/api/playlists/public".equals(path);
 	}
 
 	private static Mono<Void> unauthorized(ServerWebExchange exchange, String message) {

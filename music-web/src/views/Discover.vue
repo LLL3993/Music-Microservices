@@ -84,17 +84,12 @@ function prevBanner() {
 let bannerTimer = null
 
 async function loadRecommendedPlaylists() {
-  const headers = getAuthHeader()
-  if (!headers) {
-    recommendedPlaylists.value = []
-    return
-  }
-
   recommendedLoading.value = true
   try {
+    const headers = getAuthHeader()
     const { data } = await axios.get(`${apiBase}/api/playlists/public`, {
       params: { limit: 4 },
-      headers,
+      ...(headers ? { headers } : {}),
     })
     const list = Array.isArray(data) ? data : []
     const picked = list.slice(0, 4)
@@ -103,24 +98,28 @@ async function loadRecommendedPlaylists() {
       const playlistName = typeof p?.playlistName === 'string' ? p.playlistName : ''
       if (!playlistName) continue
       let coverUrl = defaultPlaylistCover
-      try {
-        const detailResp = await axios.get(`${apiBase}/api/playlist-details`, {
-          params: { playlistName },
-          headers,
-        })
-        const details = Array.isArray(detailResp.data) ? detailResp.data : []
-        details.sort((a, b) => {
-          const ai = Number(a?.id)
-          const bi = Number(b?.id)
-          if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
-          return 0
-        })
-        const firstSong = details.length ? details[0]?.songName : ''
-        if (typeof firstSong === 'string' && firstSong.trim()) coverUrl = coverUrlBySong(firstSong)
-      } catch {}
+      if (headers) {
+        try {
+          const detailResp = await axios.get(`${apiBase}/api/playlist-details`, {
+            params: { playlistName },
+            headers,
+          })
+          const details = Array.isArray(detailResp.data) ? detailResp.data : []
+          details.sort((a, b) => {
+            const ai = Number(a?.id)
+            const bi = Number(b?.id)
+            if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
+            return 0
+          })
+          const firstSong = details.length ? details[0]?.songName : ''
+          if (typeof firstSong === 'string' && firstSong.trim()) coverUrl = coverUrlBySong(firstSong)
+        } catch {}
+      }
       next.push({ id: p?.id ?? playlistName, playlistName, coverUrl })
     }
     recommendedPlaylists.value = next
+  } catch {
+    recommendedPlaylists.value = []
   } finally {
     recommendedLoading.value = false
   }
@@ -131,9 +130,12 @@ onMounted(() => {
     if (!isHovering.value && !isAnimating.value) nextBanner()
   }, 5000)
   loadRecommendedPlaylists()
+
+  window.addEventListener('auth:changed', loadRecommendedPlaylists)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('auth:changed', loadRecommendedPlaylists)
   if (bannerTimer) clearInterval(bannerTimer)
   bannerTimer = null
 })

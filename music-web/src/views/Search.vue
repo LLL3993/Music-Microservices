@@ -112,7 +112,7 @@ function dispatchPlayerSet(songName, artist) {
 }
 
 function playSong(songName, artist) {
-  dispatchPlayerSet(songName, artist)
+  goPlayer(songName, artist)
 }
 
 function goPlayer(songName, artist) {

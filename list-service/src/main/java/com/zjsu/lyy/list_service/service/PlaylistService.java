@@ -75,7 +75,7 @@ public class PlaylistService {
 	@Transactional(readOnly = true)
 	public List<PlaylistResponse> listPublicPlaylists(int limit) {
 		int size = Math.max(1, Math.min(limit, 50));
-		return playlistRepository.findAllByIsPublicTrueOrderByIdDesc(PageRequest.of(0, size))
+		return playlistRepository.findAllByIsPublicTrueOrderByIdAsc(PageRequest.of(0, size))
 				.stream()
 				.map(PlaylistService::toResponse)
 				.toList();

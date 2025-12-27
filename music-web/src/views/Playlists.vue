@@ -359,59 +359,64 @@ onMounted(loadPlaylists)
         <button class="btn" type="button" @click="backToList">返回</button>
       </div>
 
-      <div class="detail-head">
-        <img
-          class="cover"
-          :src="selectedPlaylistCoverUrl"
-          alt="cover"
-        />
-        <div class="info">
-          <div class="name">{{ selectedPlaylist.playlistName }}</div>
-          <div class="creator">创建者：{{ selectedPlaylist.username }}</div>
-          <div class="desc">{{ selectedPlaylist.description || '无描述' }}</div>
-          <div class="public-row">
-            <label class="public-check">
-              <input
-                type="checkbox"
-                class="public-checkbox"
-                :checked="Boolean(selectedPlaylist.isPublic)"
-                :disabled="publicUpdating"
-                @change="updatePublic($event.target.checked)"
-              />
-              <span class="public-text">公开</span>
-            </label>
-            <div class="public-hint">{{ selectedPlaylist.isPublic ? '所有人可见' : '仅自己可见' }}</div>
+      <div class="detail-layout">
+        <div class="detail-aside">
+          <div class="detail-head">
+            <img class="cover" :src="selectedPlaylistCoverUrl" alt="cover" />
+            <div class="info">
+              <div class="name">{{ selectedPlaylist.playlistName }}</div>
+              <div class="creator">创建者：{{ selectedPlaylist.username }}</div>
+              <div class="desc">
+                <div class="desc-label">歌单简介：</div>
+                <div class="desc-text">{{ selectedPlaylist.description || '无描述' }}</div>
+              </div>
+              <div class="public-row">
+                <label class="public-check">
+                  <input
+                    type="checkbox"
+                    class="public-checkbox"
+                    :checked="Boolean(selectedPlaylist.isPublic)"
+                    :disabled="publicUpdating"
+                    @change="updatePublic($event.target.checked)"
+                  />
+                  <span class="public-text">公开</span>
+                </label>
+                <div class="public-hint">{{ selectedPlaylist.isPublic ? '所有人可见' : '仅自己可见' }}</div>
+              </div>
+              <div class="public-error" v-if="publicError">{{ publicError }}</div>
+            </div>
           </div>
-          <div class="public-error" v-if="publicError">{{ publicError }}</div>
         </div>
-      </div>
 
-      <div class="hint" v-if="detailLoading">加载中...</div>
-      <div class="hint" v-else-if="detailError">{{ detailError }}</div>
-      <div class="hint" v-else-if="details.length === 0">歌单内暂无歌曲</div>
+        <div class="detail-songs">
+          <div class="hint" v-if="detailLoading">加载中...</div>
+          <div class="hint" v-else-if="detailError">{{ detailError }}</div>
+          <div class="hint" v-else-if="details.length === 0">歌单内暂无歌曲</div>
 
-      <div v-if="!detailLoading && !detailError && details.length" class="detail-items">
-        <div v-for="d in details" :key="d.id" class="detail-item">
-          <div class="meta">
-            <div class="name">{{ d.songName }}</div>
-          </div>
-          <div class="row-actions">
-            <button class="icon-action" type="button" @click="goPlayer(d.songName)">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
-              </svg>
-            </button>
-            <button class="icon-action danger" type="button" @click="deleteDetail(d)">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M3 6h18M9 6V4h6v2m-7 3v11m8-11v11M5 6l1 16h12l1-16"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
+          <div v-if="!detailLoading && !detailError && details.length" class="detail-items">
+            <div v-for="d in details" :key="d.id" class="detail-item">
+              <div class="meta">
+                <div class="name">{{ d.songName }}</div>
+              </div>
+              <div class="row-actions">
+                <button class="icon-action" type="button" @click="goPlayer(d.songName)">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
+                  </svg>
+                </button>
+                <button class="icon-action danger" type="button" @click="deleteDetail(d)">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M3 6h18M9 6V4h6v2m-7 3v11m8-11v11M5 6l1 16h12l1-16"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -570,16 +575,34 @@ onMounted(loadPlaylists)
 .detail-head {
   display: flex;
   gap: 14px;
+  padding: 16px 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  margin-top: 0;
+  flex-direction: column;
+  align-items: center;
+}
+
+.detail-layout {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(320px, 460px) 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.detail-songs {
   padding: 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--panel);
-  margin-top: 12px;
+  min-width: 0;
 }
 
 .cover {
-  width: 92px;
-  height: 92px;
+  width: 180px;
+  height: 180px;
   border-radius: 12px;
   border: 1px solid var(--border);
   object-fit: cover;
@@ -589,17 +612,19 @@ onMounted(loadPlaylists)
 .info {
   flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
 .info .name {
   font-weight: 800;
-  font-size: 16px;
+  font-size: 20px;
 }
 
 .creator {
   margin-top: 8px;
   color: var(--muted);
   font-size: 12px;
+  font-weight: 700;
 }
 
 .desc {
@@ -607,6 +632,16 @@ onMounted(loadPlaylists)
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.desc-label {
+  color: var(--text-secondary);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.desc-text {
+  white-space: pre-wrap;
 }
 
 .public-row {
@@ -658,7 +693,7 @@ onMounted(loadPlaylists)
 }
 
 .detail-items {
-  margin-top: 12px;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -690,6 +725,16 @@ onMounted(loadPlaylists)
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+@media (max-width: 980px) {
+  .detail-layout {
+    grid-template-columns: 1fr;
+  }
+  .cover {
+    width: 120px;
+    height: 120px;
+  }
 }
 
 .modal-mask {

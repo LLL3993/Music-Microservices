@@ -92,18 +92,20 @@ function parseLrc(text) {
 
 async function loadLyrics(song) {
   lyricLoading.value = true
-  lyricError.value = ''
   lyricItems.value = []
   try {
     const resp = await fetch(lrcUrlBySong(song))
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    if (!resp.ok) {
+      lyricItems.value = [{ time: 0, text: '该歌曲暂无歌词' }]
+      activeLine.value = 0
+      return
+    }
     const text = await resp.text()
     const parsed = parseLrc(text)
-    lyricItems.value = parsed.length ? parsed : [{ time: 0, text: '暂无歌词' }]
+    lyricItems.value = parsed.length ? parsed : [{ time: 0, text: '该歌曲暂无歌词' }]
     activeLine.value = 0
   } catch {
-    lyricError.value = '歌词加载失败'
-    lyricItems.value = [{ time: 0, text: '暂无歌词' }]
+    lyricItems.value = [{ time: 0, text: '该歌曲暂无歌词' }]
     activeLine.value = 0
   } finally {
     lyricLoading.value = false
@@ -328,6 +330,7 @@ function updateActiveLyricLine(time) {
             <div class="progress">
               <input
                 class="range"
+                :class="{ seeking: isSeeking }"
                 type="range"
                 min="0"
                 :max="duration || 0"
@@ -635,6 +638,10 @@ function updateActiveLyricLine(time) {
   transition: var(--transition);
 }
 
+.range.seeking {
+  background: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
 .range::-webkit-slider-thumb {
   appearance: none;
   height: 16px;
@@ -644,11 +651,6 @@ function updateActiveLyricLine(time) {
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(255, 78, 78, 0.4);
   transition: var(--transition);
-}
-
-.range::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
 }
 
 .range::-moz-range-thumb {
@@ -662,9 +664,16 @@ function updateActiveLyricLine(time) {
   transition: var(--transition);
 }
 
-.range::-moz-range-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
+@media (hover: hover) and (pointer: fine) {
+  .range::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
+  }
+
+  .range::-moz-range-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 4px 12px rgba(255, 78, 78, 0.6);
+  }
 }
 
 .time {
