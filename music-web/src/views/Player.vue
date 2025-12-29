@@ -638,8 +638,15 @@ function updateActiveLyricLine(time) {
   transition: var(--transition);
 }
 
+.range:focus,
+.range:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .range.seeking {
   background: color-mix(in srgb, var(--accent) 35%, var(--border));
+  box-shadow: 0 0 0 3px var(--border-focus);
 }
 
 .range::-webkit-slider-thumb {

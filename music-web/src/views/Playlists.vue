@@ -1,6 +1,6 @@
 <script setup>
 import axios from 'axios'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -29,6 +29,8 @@ const createForm = ref({
 
 const publicUpdating = ref(false)
 const publicError = ref('')
+
+const authedUsername = ref('')
 
 function showToast(message) {
   window.dispatchEvent(new CustomEvent('toast:show', { detail: { message } }))
@@ -61,6 +63,25 @@ function getAuthHeader() {
   if (!token) return null
   return { Authorization: `Bearer ${token}` }
 }
+
+function syncAuthedUsername() {
+  try {
+    const raw = localStorage.getItem('auth_user') || ''
+    const parsed = raw ? JSON.parse(raw) : null
+    authedUsername.value = typeof parsed?.username === 'string' ? parsed.username : ''
+  } catch {
+    authedUsername.value = ''
+  }
+}
+
+const canManageSelectedPlaylist = computed(() => {
+  const headers = getAuthHeader()
+  if (!headers) return false
+  const u = authedUsername.value
+  const pUser = selectedPlaylist.value?.username
+  if (!u || typeof pUser !== 'string' || !pUser) return false
+  return u === pUser
+})
 
 function requestLogin() {
   window.dispatchEvent(new CustomEvent('auth:open', { detail: { mode: 'login' } }))
@@ -100,21 +121,21 @@ async function goPlayer(songName) {
 
 async function loadPlaylists() {
   const headers = getAuthHeader()
-  if (!headers) {
-    error.value = '请先登录后查看歌单'
-    playlists.value = []
-    return
-  }
-
   loading.value = true
   error.value = ''
   try {
-    const { data } = await axios.get(`${apiBase}/api/playlists/username`, { headers })
+    const { data } = headers
+      ? await axios.get(`${apiBase}/api/playlists/username`, { headers })
+      : await axios.get(`${apiBase}/api/playlists/public`, { params: { limit: 50 } })
     playlists.value = Array.isArray(data) ? data : []
     const picked = typeof route.query.playlistName === 'string' ? route.query.playlistName.trim() : ''
     if (picked && !selectedPlaylist.value) {
-      const match = playlists.value.find((p) => p?.playlistName === picked)
-      if (match) openPlaylist(match)
+      const owner = typeof route.query.username === 'string' ? route.query.username.trim() : ''
+      const match = playlists.value.find((p) =>
+        owner ? p?.playlistName === picked && p?.username === owner : p?.playlistName === picked,
+      )
+      if (match) await openPlaylist(match)
+      else await openPlaylistByName(picked, owner)
     }
   } catch (err) {
     error.value = pickErrorMessage(err)
@@ -122,6 +143,19 @@ async function loadPlaylists() {
   } finally {
     loading.value = false
   }
+}
+
+async function openPlaylistByName(playlistName, ownerUsername) {
+  const name = typeof playlistName === 'string' ? playlistName.trim() : ''
+  if (!name) return
+  try {
+    const { data } = await axios.get(`${apiBase}/api/playlists/playlist-name`, { params: { playlistName: name } })
+    const list = Array.isArray(data) ? data : []
+    const owner = typeof ownerUsername === 'string' ? ownerUsername.trim() : ''
+    const picked = owner ? list.find((p) => p?.username === owner) : list[0]
+    if (!picked) return
+    await openPlaylist(picked)
+  } catch {}
 }
 
 function openCreate() {
@@ -235,18 +269,24 @@ async function openPlaylist(playlist) {
   details.value = []
   detailError.value = ''
 
-  const headers = getAuthHeader()
-  if (!headers) {
-    detailError.value = '请先登录后查看歌单详情'
-    return
-  }
-
   detailLoading.value = true
   try {
-    const { data } = await axios.get(`${apiBase}/api/playlist-details`, {
-      params: { playlistName: playlist.playlistName },
-      headers,
-    })
+    let data
+    try {
+      const resp = await axios.get(`${apiBase}/api/playlist-details`, {
+        params: { playlistName: playlist.playlistName, username: playlist?.username || '' },
+      })
+      data = resp.data
+    } catch (err) {
+      const headers = getAuthHeader()
+      if (!headers) throw err
+      const resp = await axios.get(`${apiBase}/api/playlist-details`, {
+        params: { playlistName: playlist.playlistName, username: playlist?.username || '' },
+        headers,
+      })
+      data = resp.data
+    }
+
     const arr = Array.isArray(data) ? data : []
     arr.sort((a, b) => {
       const ai = Number(a?.id)
@@ -290,13 +330,22 @@ watch(
   (n) => {
     const picked = typeof n === 'string' ? n.trim() : ''
     if (!picked) return
-    if (!playlists.value.length) return
-    const match = playlists.value.find((p) => p?.playlistName === picked)
+    const owner = typeof route.query.username === 'string' ? route.query.username.trim() : ''
+    const match = playlists.value.find((p) => (owner ? p?.playlistName === picked && p?.username === owner : p?.playlistName === picked))
     if (match) openPlaylist(match)
+    else openPlaylistByName(picked, owner)
   },
 )
 
-onMounted(loadPlaylists)
+onMounted(() => {
+  syncAuthedUsername()
+  window.addEventListener('auth:changed', syncAuthedUsername)
+  loadPlaylists()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('auth:changed', syncAuthedUsername)
+})
 </script>
 
 <template>
@@ -338,7 +387,12 @@ onMounted(loadPlaylists)
             <div class="p-title">{{ p.playlistName }}</div>
             <div class="p-desc">{{ p.description || '无描述' }}</div>
           </button>
-          <button class="icon-action danger" type="button" @click="deletePlaylist(p)">
+          <button
+            v-if="getAuthHeader() && authedUsername && p.username === authedUsername"
+            class="icon-action danger"
+            type="button"
+            @click="deletePlaylist(p)"
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path
                 d="M3 6h18M9 6V4h6v2m-7 3v11m8-11v11M5 6l1 16h12l1-16"
@@ -370,7 +424,7 @@ onMounted(loadPlaylists)
                 <div class="desc-label">歌单简介：</div>
                 <div class="desc-text">{{ selectedPlaylist.description || '无描述' }}</div>
               </div>
-              <div class="public-row">
+              <div class="public-row" v-if="canManageSelectedPlaylist">
                 <label class="public-check">
                   <input
                     type="checkbox"
@@ -404,7 +458,7 @@ onMounted(loadPlaylists)
                     <path d="M8 5v14l12-7L8 5Z" fill="currentColor" />
                   </svg>
                 </button>
-                <button class="icon-action danger" type="button" @click="deleteDetail(d)">
+                <button v-if="canManageSelectedPlaylist" class="icon-action danger" type="button" @click="deleteDetail(d)">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                     <path
                       d="M3 6h18M9 6V4h6v2m-7 3v11m8-11v11M5 6l1 16h12l1-16"
@@ -462,6 +516,7 @@ onMounted(loadPlaylists)
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding-bottom: 16px;
 }
 
 .card {
@@ -575,21 +630,22 @@ onMounted(loadPlaylists)
 .detail-head {
   display: flex;
   gap: 14px;
-  padding: 16px 16px 18px;
+  padding: 18px 18px 20px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--panel);
   margin-top: 0;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-start;
 }
 
 .detail-layout {
   margin-top: 12px;
   display: grid;
   grid-template-columns: minmax(320px, 460px) 1fr;
-  gap: 12px;
+  gap: 16px;
   align-items: start;
+  min-height: 520px;
 }
 
 .detail-songs {
@@ -598,11 +654,14 @@ onMounted(loadPlaylists)
   border: 1px solid var(--border);
   background: var(--panel);
   min-width: 0;
+  min-height: 520px;
+  max-height: calc(100vh - 320px);
+  overflow: auto;
 }
 
 .cover {
-  width: 180px;
-  height: 180px;
+  width: 220px;
+  height: 220px;
   border-radius: 12px;
   border: 1px solid var(--border);
   object-fit: cover;
@@ -617,20 +676,21 @@ onMounted(loadPlaylists)
 
 .info .name {
   font-weight: 800;
-  font-size: 20px;
+  font-size: 26px;
+  line-height: 1.2;
 }
 
 .creator {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .desc {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -730,6 +790,10 @@ onMounted(loadPlaylists)
 @media (max-width: 980px) {
   .detail-layout {
     grid-template-columns: 1fr;
+  }
+  .detail-head {
+    flex-direction: column;
+    align-items: center;
   }
   .cover {
     width: 120px;

@@ -118,6 +118,28 @@ const lyricActiveLine = ref(0)
 
 const favoriteIdBySongName = ref({})
 
+const queueSourceOpen = ref(false)
+const queueSourceTab = ref('mine')
+const queueSourceDisplayTab = ref('mine')
+const queueSourceLoading = ref(false)
+const queueSourceError = ref('')
+const queueSourceMinePlaylists = ref([])
+const queueSourcePublicPlaylists = ref([])
+const queueSourceFavoriteSongs = ref([])
+const queueSourceApplying = ref(false)
+const queueSourceApplyError = ref('')
+
+const queueSourceDisplayedPlaylists = computed(() => {
+  return queueSourceDisplayTab.value === 'public' ? queueSourcePublicPlaylists.value : queueSourceMinePlaylists.value
+})
+
+const queueSourceHasDisplayedContent = computed(() => {
+  if (queueSourceDisplayTab.value === 'mine') return true
+  return queueSourceDisplayedPlaylists.value.length > 0
+})
+
+const isNavigating = ref(false)
+
 const toastOpen = ref(false)
 const toastMessage = ref('')
 let toastTimer = null
@@ -238,10 +260,10 @@ async function loadLyrics(song) {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const text = await resp.text()
     const parsed = parseLrc(text)
-    lyricItems.value = parsed.length ? parsed : [{ time: 0, text: '暂无歌词' }]
+    lyricItems.value = parsed.length ? parsed : [{ time: 0, text: '该歌曲暂无歌词' }]
   } catch {
-    lyricError.value = '歌词加载失败'
-    lyricItems.value = [{ time: 0, text: '暂无歌词' }]
+    lyricError.value = '该歌曲暂无歌词'
+    lyricItems.value = [{ time: 0, text: '该歌曲暂无歌词' }]
   } finally {
     lyricLoading.value = false
   }
@@ -317,6 +339,15 @@ function openPlayer() {
   router.push(`/player?name=${encodeURIComponent(playerState.value.songName)}`)
 }
 
+async function syncPlayerRouteSong(song) {
+  if (route.name !== 'Player') return
+  const current = typeof route.query.name === 'string' ? route.query.name : ''
+  if (current === song) return
+  try {
+    await router.replace({ name: 'Player', query: { name: song } })
+  } catch {}
+}
+
 function requireAuthOrOpenLogin() {
   if (isAuthed.value) return true
   openLogin()
@@ -346,6 +377,183 @@ function onPlayerbarNext() {
 function onPlayerbarFavorite(songName) {
   if (!requireAuthOrOpenLogin()) return
   toggleFavorite(songName)
+}
+
+function openQueueSource() {
+  if (!requireAuthOrOpenLogin()) return
+  queueSourceOpen.value = true
+  queueSourceTab.value = 'mine'
+  queueSourceDisplayTab.value = 'mine'
+  queueSourceLoading.value = false
+  queueSourceApplyError.value = ''
+  queueSourceError.value = ''
+  loadQueueSourceTabData('mine')
+  loadQueueSourceTabData('public', { silent: true })
+  loadQueueSourceTabData('favorites', { silent: true })
+}
+
+function closeQueueSource() {
+  queueSourceOpen.value = false
+  queueSourceLoading.value = false
+  queueSourceError.value = ''
+  queueSourceApplying.value = false
+  queueSourceApplyError.value = ''
+}
+
+function switchQueueSourceTab(tab) {
+  const next = tab === 'public' ? 'public' : 'mine'
+  if (queueSourceTab.value === next) return
+  queueSourceTab.value = next
+  queueSourceApplyError.value = ''
+  const alreadyLoaded =
+    (next === 'mine' && queueSourceMinePlaylists.value.length) ||
+    (next === 'public' && queueSourcePublicPlaylists.value.length)
+  if (alreadyLoaded) {
+    queueSourceDisplayTab.value = next
+    queueSourceError.value = ''
+    queueSourceLoading.value = false
+    return
+  }
+  loadQueueSourceTabData(next, { setDisplayOnLoaded: true })
+}
+
+async function loadQueueSourceTabData(tab, options) {
+  const silent = Boolean(options?.silent)
+  const setDisplayOnLoaded = Boolean(options?.setDisplayOnLoaded)
+  const target = tab === 'public' ? 'public' : tab === 'favorites' ? 'favorites' : 'mine'
+  if (target === 'mine' && queueSourceMinePlaylists.value.length) return
+  if (target === 'public' && queueSourcePublicPlaylists.value.length) return
+  if (target === 'favorites' && queueSourceFavoriteSongs.value.length) return
+
+  let loadingTimer = null
+  if (!silent) {
+    loadingTimer = window.setTimeout(() => {
+      queueSourceLoading.value = true
+    }, 150)
+  }
+  queueSourceError.value = ''
+  try {
+    if (target === 'public') {
+      const { data } = await axios.get(`${apiBase}/api/playlists/public`, { params: { limit: 200 } })
+      queueSourcePublicPlaylists.value = Array.isArray(data) ? data : []
+    } else if (target === 'mine') {
+      if (!token.value) throw new Error('NO_AUTH_MINE')
+      const headers = { Authorization: `Bearer ${token.value}` }
+      const { data } = await axios.get(`${apiBase}/api/playlists/username`, { headers })
+      queueSourceMinePlaylists.value = Array.isArray(data) ? data : []
+    } else {
+      if (!token.value) throw new Error('NO_AUTH_FAV')
+      const headers = { Authorization: `Bearer ${token.value}` }
+      const { data } = await axios.get(`${apiBase}/api/favorites/username`, { headers })
+      const arr = Array.isArray(data) ? data : []
+      arr.sort((a, b) => {
+        const ai = Number(a?.id)
+        const bi = Number(b?.id)
+        if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
+        return 0
+      })
+      const out = []
+      const seen = new Set()
+      for (const f of arr) {
+        const name = typeof f?.songName === 'string' ? f.songName.trim() : ''
+        if (!name) continue
+        if (seen.has(name)) continue
+        seen.add(name)
+        out.push(name)
+      }
+      queueSourceFavoriteSongs.value = out
+    }
+    if (setDisplayOnLoaded) queueSourceDisplayTab.value = target
+  } catch (e) {
+    if (e?.message === 'NO_AUTH_MINE') queueSourceError.value = '请先登录后查看我的歌单'
+    else if (e?.message === 'NO_AUTH_FAV') queueSourceError.value = '请先登录后查看收藏夹'
+    else queueSourceError.value = target === 'favorites' ? '收藏夹加载失败' : '歌单加载失败'
+  } finally {
+    if (loadingTimer) window.clearTimeout(loadingTimer)
+    if (!silent) queueSourceLoading.value = false
+  }
+}
+
+async function applyQueueFromPlaylist(p) {
+  if (!p) return
+  if (queueSourceApplying.value) return
+  const playlistName = typeof p?.playlistName === 'string' ? p.playlistName.trim() : ''
+  const username = typeof p?.username === 'string' ? p.username.trim() : ''
+  if (!playlistName) return
+
+  queueSourceApplying.value = true
+  queueSourceApplyError.value = ''
+  try {
+    let resp
+    const params = { playlistName, username }
+    try {
+      resp = await axios.get(`${apiBase}/api/playlist-details`, { params })
+    } catch (err) {
+      if (!token.value) throw err
+      const headers = { Authorization: `Bearer ${token.value}` }
+      resp = await axios.get(`${apiBase}/api/playlist-details`, { params, headers })
+    }
+
+    const arr = Array.isArray(resp?.data) ? resp.data : []
+    arr.sort((a, b) => {
+      const ai = Number(a?.id)
+      const bi = Number(b?.id)
+      if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
+      return 0
+    })
+
+    const queue = arr.map((x) => x?.songName).filter((x) => typeof x === 'string' && x.trim())
+    if (!queue.length) {
+      showToast('歌单内暂无歌曲')
+      return
+    }
+
+    const currentSong = playerState.value.songName
+    const currentIdx = queue.findIndex((x) => x === currentSong)
+    playerState.value.queue = queue
+    playerState.value.index = currentIdx >= 0 ? currentIdx : 0
+    persistPlayerState()
+    emitPlayerState()
+    showToast(`已切换：${playlistName}`)
+    closeQueueSource()
+  } catch {
+    queueSourceApplyError.value = '歌单歌曲加载失败'
+  } finally {
+    queueSourceApplying.value = false
+  }
+}
+
+async function applyQueueFromFavorites() {
+  if (queueSourceApplying.value) return
+  const list = queueSourceFavoriteSongs.value
+  if (!Array.isArray(list) || !list.length) {
+    showToast('收藏夹暂无歌曲')
+    return
+  }
+
+  queueSourceApplying.value = true
+  queueSourceApplyError.value = ''
+  try {
+    const currentSong = playerState.value.songName
+    const idx = list.findIndex((x) => x === currentSong)
+    playerState.value.queue = [...list]
+    playerState.value.index = idx >= 0 ? idx : 0
+    persistPlayerState()
+    emitPlayerState()
+    showToast('已切换：我的收藏')
+    closeQueueSource()
+  } finally {
+    queueSourceApplying.value = false
+  }
+}
+
+async function applyQueueFromFavoritesEnsured() {
+  if (!token.value) {
+    showToast('请先登录后查看收藏夹')
+    return
+  }
+  if (!queueSourceFavoriteSongs.value.length) await loadQueueSourceTabData('favorites')
+  await applyQueueFromFavorites()
 }
 
 let pendingPlayRetry = null
@@ -419,33 +627,32 @@ function togglePlay() {
   else startPlayback()
 }
 
-async function playPrev() {
-  const q = playerState.value.queue
-  if (!q.length) return
-  ensureQueueIndex()
-  const nextIndex = (playerState.value.index - 1 + q.length) % q.length
-  playerState.value.index = nextIndex
-  playerState.value.songName = q[nextIndex]
+function replayCurrent() {
+  const song = playerState.value.songName
+  if (!song) return
   playerState.value.isPlaying = true
   playerState.value.currentTime = 0
-  playerState.value.audioUrl = musicUrlBySong(playerState.value.songName)
-  playerState.value.lrcUrl = lrcUrlBySong(playerState.value.songName)
-  playerState.value.coverUrl = coverUrlBySong(playerState.value.songName)
   persistPlayerState()
   emitPlayerState()
-  loadLyrics(playerState.value.songName)
-  openPlayer()
-  applyAudioSource(playerState.value.songName, true)
+  applyAudioSource(song, true)
   startPlayback()
 }
 
-async function playNext() {
+async function playPrev() {
+  if (isNavigating.value) return
+  isNavigating.value = true
+  try {
   const q = playerState.value.queue
-  if (!q.length) return
-  ensureQueueIndex()
-  const nextIndex = (playerState.value.index + 1) % q.length
+  if (!q.length) {
+    replayCurrent()
+    return
+  }
+  const currentIdx = q.findIndex((s) => s === playerState.value.songName)
+  const baseIdx = currentIdx >= 0 ? currentIdx : 0
+  const nextIndex = (baseIdx - 1 + q.length) % q.length
   playerState.value.index = nextIndex
   playerState.value.songName = q[nextIndex]
+  playerState.value.artist = ''
   playerState.value.isPlaying = true
   playerState.value.currentTime = 0
   playerState.value.audioUrl = musicUrlBySong(playerState.value.songName)
@@ -454,9 +661,45 @@ async function playNext() {
   persistPlayerState()
   emitPlayerState()
   loadLyrics(playerState.value.songName)
-  openPlayer()
+  resolveArtistIfMissing(playerState.value.songName)
+  await syncPlayerRouteSong(playerState.value.songName)
   applyAudioSource(playerState.value.songName, true)
   startPlayback()
+  } finally {
+    isNavigating.value = false
+  }
+}
+
+async function playNext() {
+  if (isNavigating.value) return
+  isNavigating.value = true
+  try {
+  const q = playerState.value.queue
+  if (!q.length) {
+    replayCurrent()
+    return
+  }
+  const currentIdx = q.findIndex((s) => s === playerState.value.songName)
+  const baseIdx = currentIdx >= 0 ? currentIdx : -1
+  const nextIndex = (baseIdx + 1) % q.length
+  playerState.value.index = nextIndex
+  playerState.value.songName = q[nextIndex]
+  playerState.value.artist = ''
+  playerState.value.isPlaying = true
+  playerState.value.currentTime = 0
+  playerState.value.audioUrl = musicUrlBySong(playerState.value.songName)
+  playerState.value.lrcUrl = lrcUrlBySong(playerState.value.songName)
+  playerState.value.coverUrl = coverUrlBySong(playerState.value.songName)
+  persistPlayerState()
+  emitPlayerState()
+  loadLyrics(playerState.value.songName)
+  resolveArtistIfMissing(playerState.value.songName)
+  await syncPlayerRouteSong(playerState.value.songName)
+  applyAudioSource(playerState.value.songName, true)
+  startPlayback()
+  } finally {
+    isNavigating.value = false
+  }
 }
 
 function toggleTheme() {
@@ -525,6 +768,10 @@ function logout() {
   window.dispatchEvent(new CustomEvent('auth:changed', { detail: { token: '', user: null } }))
 
   router.push({ name: 'Discover' })
+}
+
+function openProfile() {
+  router.push({ name: 'Profile' })
 }
 
 function pickErrorMessage(err) {
@@ -861,6 +1108,7 @@ onBeforeUnmount(() => {
             :src="brandLogoUrl"
             alt="MUSIC"
           />
+          <span class="brand-name">LYY-Music</span>
         </div>
         <div class="topbar-search">
           <input
@@ -884,6 +1132,7 @@ onBeforeUnmount(() => {
           <img class="avatar" :src="userAvatarUrl" alt="User" />
           <div class="user-menu">
             <div class="menu-card">
+              <button class="menu-btn" type="button" @click="openProfile">个人中心</button>
               <button class="menu-btn" type="button" @click="logout">退出登录</button>
             </div>
           </div>
@@ -1025,7 +1274,7 @@ onBeforeUnmount(() => {
             <button
               class="playerbar-btn"
               type="button"
-              :disabled="isAuthed && !playerState.queue.length"
+              :disabled="isAuthed && !playerState.songName"
               @click="onPlayerbarPrev"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -1056,7 +1305,7 @@ onBeforeUnmount(() => {
             <button
               class="playerbar-btn"
               type="button"
-              :disabled="isAuthed && !playerState.queue.length"
+              :disabled="isAuthed && !playerState.songName"
               @click="onPlayerbarNext"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -1079,17 +1328,37 @@ onBeforeUnmount(() => {
             >
               <svg v-if="isFavorited(playerState.songName)" width="18" height="18" viewBox="0 0 24 24">
                 <path
-                  d="M12 21s-7-4.4-9.5-8.3C.5 9.4 2.2 6 6 6c2.1 0 3.4 1.2 4 2 0.6-0.8 1.9-2 4-2 3.8 0 5.5 3.4 3.5 6.7C19 16.6 12 21 12 21Z"
+                  d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"
                   fill="currentColor"
                 />
               </svg>
               <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path
-                  d="M12 20s-7-4.2-9.1-7.8C1 9.2 2.7 6 6.2 6c2 0 3.2 1.1 3.8 1.9C10.6 7.1 11.8 6 13.8 6c3.5 0 5.2 3.2 3.3 6.2C19 15.8 12 20 12 20Z"
+                  d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"
                   stroke="currentColor"
                   stroke-width="1.8"
                   stroke-linecap="round"
                   stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+
+            <button class="playerbar-btn" type="button" @click="openQueueSource">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M4 6h16M4 12h16M4 18h10"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M18 18l2 2 4-4"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  transform="translate(-4 0)"
                 />
               </svg>
             </button>
@@ -1140,7 +1409,7 @@ onBeforeUnmount(() => {
         <button class="modal-close" type="button" @click="closeAuth">×</button>
       </div>
 
-      <div v-if="authMode === 'login'" class="form">
+      <div v-if="authMode === 'login'" class="form" @keydown.enter.prevent="submitLogin">
         <div class="field">
           <div class="label">用户名</div>
           <input v-model="loginForm.username" class="field-input" placeholder="请输入用户名" />
@@ -1158,7 +1427,7 @@ onBeforeUnmount(() => {
         <button class="switch-btn" type="button" @click="switchToRegister">去注册</button>
       </div>
 
-      <div v-else class="form">
+      <div v-else class="form" @keydown.enter.prevent="submitRegister">
         <div class="field">
           <div class="label">用户名</div>
           <input v-model="registerForm.username" class="field-input" placeholder="请输入用户名" />
@@ -1190,15 +1459,95 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </div>
+
+  <div v-if="queueSourceOpen" class="modal-mask" :class="{ active: queueSourceOpen }" @click.self="closeQueueSource">
+    <div class="modal queue-source-modal">
+      <div class="modal-head">
+        <div class="modal-title">切换下一首/上一首歌单来源</div>
+        <button class="modal-close" type="button" @click="closeQueueSource">×</button>
+      </div>
+
+      <div class="queue-source-tabs">
+        <button
+          class="queue-source-tab"
+          :class="{ active: queueSourceTab === 'mine' }"
+          type="button"
+          :disabled="queueSourceLoading || queueSourceApplying"
+          @click="switchQueueSourceTab('mine')"
+        >
+          我的收藏/歌单
+        </button>
+        <button
+          class="queue-source-tab"
+          :class="{ active: queueSourceTab === 'public' }"
+          type="button"
+          :disabled="queueSourceLoading || queueSourceApplying"
+          @click="switchQueueSourceTab('public')"
+        >
+          公开歌单
+        </button>
+      </div>
+
+      <div class="queue-source-body">
+        <div v-if="queueSourceLoading && !queueSourceHasDisplayedContent" class="queue-source-hint">加载中...</div>
+        <div v-else-if="queueSourceError && !queueSourceHasDisplayedContent" class="queue-source-hint">{{ queueSourceError }}</div>
+
+        <template v-else>
+          <div v-if="queueSourceDisplayTab === 'public' && !queueSourceDisplayedPlaylists.length" class="queue-source-hint">暂无歌单</div>
+          <template v-else>
+            <div class="queue-source-list">
+              <button
+                v-if="queueSourceDisplayTab === 'mine'"
+                class="queue-source-item"
+                type="button"
+                :disabled="queueSourceApplying"
+                @click="applyQueueFromFavoritesEnsured"
+              >
+                <div class="queue-source-item-name">收藏夹</div>
+                <div class="queue-source-item-sub">
+                  <span v-if="queueSourceFavoriteSongs.length">共 {{ queueSourceFavoriteSongs.length }} 首</span>
+                  <span v-else>暂无歌曲</span>
+                </div>
+              </button>
+
+              <button
+                v-for="p in queueSourceDisplayedPlaylists"
+                :key="`${p?.playlistName || ''}-${p?.username || ''}-${p?.id || ''}`"
+                class="queue-source-item"
+                type="button"
+                :disabled="queueSourceApplying"
+                @click="applyQueueFromPlaylist(p)"
+              >
+                <div class="queue-source-item-name">{{ p?.playlistName }}</div>
+                <div class="queue-source-item-sub">
+                  <span class="queue-source-item-owner">{{ p?.username }}</span>
+                  <span class="queue-source-item-dot">·</span>
+                  <span class="queue-source-item-flag">{{ p?.isPublic ? '公开' : '私密' }}</span>
+                </div>
+              </button>
+            </div>
+
+            <div v-if="queueSourceDisplayTab === 'mine' && !queueSourceDisplayedPlaylists.length" class="queue-source-hint">
+              暂无歌单
+            </div>
+          </template>
+        </template>
+
+        <div class="form-error" v-if="queueSourceApplyError">{{ queueSourceApplyError }}</div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
 .layout {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
   color: var(--text);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
@@ -1258,6 +1607,7 @@ onBeforeUnmount(() => {
 .brand {
   display: flex;
   align-items: center;
+  gap: 10px;
   cursor: pointer;
   user-select: none;
   transition: var(--transition);
@@ -1272,6 +1622,35 @@ onBeforeUnmount(() => {
   width: auto;
   display: block;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.brand-name {
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  font-size: 18px;
+  line-height: 1;
+  background: linear-gradient(90deg, #ff4e4e, #ffb199, #7c6cff, #ff4e4e);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 12px 28px rgba(255, 78, 78, 0.14);
+  animation: brandShimmer 5s linear infinite;
+}
+
+@media (max-width: 980px) {
+  .brand-name {
+    display: none;
+  }
+}
+
+@keyframes brandShimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
 }
 
 .topbar-search {
@@ -1537,8 +1916,10 @@ onBeforeUnmount(() => {
 
 .content {
   flex: 1;
-  padding: 24px;
+  padding: 24px 24px 0;
   overflow: auto;
+  min-height: 0;
+  min-width: 0;
   background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
 }
 
@@ -1622,8 +2003,9 @@ onBeforeUnmount(() => {
 
 .playerbar-current-lyric {
   height: 44px;
-  width: 320px;
-  max-width: 34vw;
+  width: 360px;
+  max-width: calc(34vw + 40px);
+  margin-left: -40px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
@@ -1729,8 +2111,15 @@ onBeforeUnmount(() => {
   transition: var(--transition);
 }
 
+.playerbar-range:focus,
+.playerbar-range:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .playerbar-range.seeking {
   background: color-mix(in srgb, var(--accent) 35%, var(--border));
+  box-shadow: 0 0 0 3px var(--border-focus);
 }
 
 .playerbar-range::-webkit-slider-thumb {
@@ -1922,5 +2311,111 @@ onBeforeUnmount(() => {
   border-color: var(--accent);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.queue-source-modal {
+  width: 520px;
+}
+
+.queue-source-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.queue-source-tab {
+  flex: 1;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.queue-source-tab.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--text);
+}
+
+.queue-source-tab:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.queue-source-body {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.queue-source-hint {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-secondary);
+  padding: 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.queue-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.queue-source-item {
+  text-align: left;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 12px 12px;
+  cursor: pointer;
+  transition: var(--transition);
+  color: var(--text);
+}
+
+.queue-source-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
+
+.queue-source-item:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.queue-source-item-name {
+  font-weight: 900;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.queue-source-item-sub {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.queue-source-item-dot {
+  opacity: 0.6;
 }
 </style>

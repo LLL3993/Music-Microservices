@@ -8,6 +8,17 @@ const router = useRouter()
 const route = useRoute()
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
+const defaultSongCover = 'https://dummyimage.com/320x100/999999/ff4400.png&text=MUSIC'
+
+function baseUrl() {
+  const b = import.meta.env.BASE_URL
+  return typeof b === 'string' && b ? b : '/'
+}
+
+function coverUrlBySong(song) {
+  if (!song) return defaultSongCover
+  return `${baseUrl()}data/cover/${encodeURIComponent(song)}.jpg`
+}
 
 const hotTags = [
   '周杰伦',
@@ -386,7 +397,7 @@ onBeforeUnmount(() => {
         <div v-for="(s, idx) in results" :key="s.id ?? `${s.songName}-${idx}`" class="item hover-lift" :style="{ animationDelay: `${idx * 0.05}s` }">
           <img
             class="cover"
-            src="https://dummyimage.com/320x100/999999/ff4400.png&text=MUSIC"
+            :src="coverUrlBySong(s.songName)"
             alt="cover"
           />
           <div class="meta">
@@ -397,13 +408,13 @@ onBeforeUnmount(() => {
             <button class="icon-action fav" type="button" @click="toggleFavorite(s.songName)">
               <svg v-if="isFavorited(s.songName)" width="18" height="18" viewBox="0 0 24 24">
                 <path
-                  d="M12 21s-7-4.4-9.5-8.3C.5 9.4 2.2 6 6 6c2.1 0 3.4 1.2 4 2 0.6-0.8 1.9-2 4-2 3.8 0 5.5 3.4 3.5 6.7C19 16.6 12 21 12 21Z"
+                  d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"
                   fill="currentColor"
                 />
               </svg>
               <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path
-                  d="M12 20s-7-4.2-9.1-7.8C1 9.2 2.7 6 6.2 6c2 0 3.2 1.1 3.8 1.9C10.6 7.1 11.8 6 13.8 6c3.5 0 5.2 3.2 3.3 6.2C19 15.8 12 20 12 20Z"
+                  d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"
                   stroke="currentColor"
                   stroke-width="1.8"
                   stroke-linecap="round"

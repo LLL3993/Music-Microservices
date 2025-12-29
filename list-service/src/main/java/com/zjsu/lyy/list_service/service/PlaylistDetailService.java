@@ -70,6 +70,24 @@ public class PlaylistDetailService {
 				.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<PlaylistDetailResponse> listPublicDetails(String playlistName) {
+		var playlist = playlistService.getPublicPlaylistEntityByName(playlistName);
+		return playlistDetailRepository.findAllByUsernameAndPlaylistNameOrderByIdDesc(playlist.getUsername(), playlistName)
+				.stream()
+				.map(PlaylistDetailService::toResponse)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<PlaylistDetailResponse> listPublicDetails(String username, String playlistName) {
+		playlistService.getPublicPlaylistEntityByUsernameAndName(username, playlistName);
+		return playlistDetailRepository.findAllByUsernameAndPlaylistNameOrderByIdDesc(username, playlistName)
+				.stream()
+				.map(PlaylistDetailService::toResponse)
+				.toList();
+	}
+
 	@Transactional
 	public void deleteDetail(Long id) {
 		if (!playlistDetailRepository.existsById(id)) {

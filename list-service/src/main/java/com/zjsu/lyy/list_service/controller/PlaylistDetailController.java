@@ -38,10 +38,21 @@ public class PlaylistDetailController {
 
 	@GetMapping
 	public List<PlaylistDetailResponse> listDetailsQuery(
-			@RequestHeader("X-Username") String username,
+			@RequestHeader(value = "X-Username", required = false) String authUsername,
+			@RequestParam(required = false) String username,
 			@RequestParam String playlistName
 	) {
-		return playlistDetailService.listDetails(username, playlistName);
+		boolean hasAuth = !(authUsername == null || authUsername.isBlank());
+		boolean hasUsername = !(username == null || username.isBlank());
+		if (!hasAuth) {
+			return hasUsername
+					? playlistDetailService.listPublicDetails(username, playlistName)
+					: playlistDetailService.listPublicDetails(playlistName);
+		}
+		if (hasUsername && !username.equals(authUsername)) {
+			return playlistDetailService.listPublicDetails(username, playlistName);
+		}
+		return playlistDetailService.listDetails(authUsername, playlistName);
 	}
 
 	@DeleteMapping("/{id}")

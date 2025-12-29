@@ -36,22 +36,28 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
 
 	@Override
 	public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-		if ("OPTIONS".equalsIgnoreCase(exchange.getRequest().getMethod().name())) {
+		String method = exchange.getRequest().getMethod().name();
+		if ("OPTIONS".equalsIgnoreCase(method)) {
 			return chain.filter(exchange);
 		}
 
 		String path = exchange.getRequest().getURI().getPath();
-		if (isPermitPath(path)) {
+		String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+
+		boolean permit = isPermitPath(path, method);
+		if (permit && (authHeader == null || !authHeader.startsWith("Bearer "))) {
 			return chain.filter(exchange);
 		}
 
-		String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 		if (authHeader == null || !authHeader.startsWith("Bearer ")) {
 			return unauthorized(exchange, "缺少或非法 Authorization");
 		}
 
 		String token = authHeader.substring("Bearer ".length()).trim();
 		if (token.isEmpty()) {
+			if (permit) {
+				return chain.filter(exchange);
+			}
 			return unauthorized(exchange, "缺少或非法 Authorization");
 		}
 
@@ -65,6 +71,9 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
 					.getPayload();
 		}
 		catch (JwtException ex) {
+			if (permit) {
+				return chain.filter(exchange);
+			}
 			return unauthorized(exchange, "JWT 校验失败");
 		}
 
@@ -89,10 +98,11 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
 		return -100;
 	}
 
-	private static boolean isPermitPath(String path) {
+	private static boolean isPermitPath(String path, String method) {
 		return "/api/auth/login".equals(path)
 				|| "/api/auth/register".equals(path)
-				|| "/api/playlists/public".equals(path);
+				|| ("GET".equalsIgnoreCase(method) && path != null && path.startsWith("/api/playlists/public"))
+				|| ("GET".equalsIgnoreCase(method) && path != null && path.startsWith("/api/playlist-details"));
 	}
 
 	private static Mono<Void> unauthorized(ServerWebExchange exchange, String message) {

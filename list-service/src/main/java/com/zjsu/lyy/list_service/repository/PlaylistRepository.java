@@ -19,5 +19,9 @@ public interface PlaylistRepository extends JpaRepository<Playlist, Long> {
 
 	List<Playlist> findAllByIsPublicTrueOrderByIdAsc(Pageable pageable);
 
+	Optional<Playlist> findByUsernameAndPlaylistNameAndIsPublicTrue(String username, String playlistName);
+
+	Optional<Playlist> findFirstByPlaylistNameAndIsPublicTrueOrderByIdDesc(String playlistName);
+
 	void deleteAllByUsername(String username);
 }

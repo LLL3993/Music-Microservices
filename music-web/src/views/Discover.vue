@@ -18,15 +18,11 @@ function coverUrlBySong(song) {
   return `${baseUrl()}data/cover/${encodeURIComponent(song)}.jpg`
 }
 
-function getAuthHeader() {
-  const token = localStorage.getItem('auth_token') || ''
-  if (!token) return null
-  return { Authorization: `Bearer ${token}` }
-}
-
-function openPlaylist(playlistName) {
-  if (typeof playlistName !== 'string' || !playlistName.trim()) return
-  router.push({ name: 'Playlists', query: { playlistName } })
+function openPublicPlaylist(playlist) {
+  const playlistName = typeof playlist?.playlistName === 'string' ? playlist.playlistName.trim() : ''
+  if (!playlistName) return
+  const username = typeof playlist?.username === 'string' ? playlist.username.trim() : ''
+  router.push({ name: 'PublicPlaylist', query: { playlistName, ...(username ? { username } : {}) } })
 }
 
 const recommendedPlaylists = ref([])
@@ -83,13 +79,30 @@ function prevBanner() {
 
 let bannerTimer = null
 
+async function resolveCoverUrl(playlistName, username) {
+  let coverUrl = defaultPlaylistCover
+  try {
+    const detailResp = await axios.get(`${apiBase}/api/playlist-details`, {
+      params: { playlistName, ...(username ? { username } : {}) },
+    })
+    const details = Array.isArray(detailResp.data) ? detailResp.data : []
+    details.sort((a, b) => {
+      const ai = Number(a?.id)
+      const bi = Number(b?.id)
+      if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
+      return 0
+    })
+    const firstSong = details.length ? details[0]?.songName : ''
+    if (typeof firstSong === 'string' && firstSong.trim()) coverUrl = coverUrlBySong(firstSong)
+  } catch {}
+  return coverUrl
+}
+
 async function loadRecommendedPlaylists() {
   recommendedLoading.value = true
   try {
-    const headers = getAuthHeader()
     const { data } = await axios.get(`${apiBase}/api/playlists/public`, {
       params: { limit: 4 },
-      ...(headers ? { headers } : {}),
     })
     const list = Array.isArray(data) ? data : []
     const picked = list.slice(0, 4)
@@ -97,25 +110,9 @@ async function loadRecommendedPlaylists() {
     for (const p of picked) {
       const playlistName = typeof p?.playlistName === 'string' ? p.playlistName : ''
       if (!playlistName) continue
-      let coverUrl = defaultPlaylistCover
-      if (headers) {
-        try {
-          const detailResp = await axios.get(`${apiBase}/api/playlist-details`, {
-            params: { playlistName },
-            headers,
-          })
-          const details = Array.isArray(detailResp.data) ? detailResp.data : []
-          details.sort((a, b) => {
-            const ai = Number(a?.id)
-            const bi = Number(b?.id)
-            if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
-            return 0
-          })
-          const firstSong = details.length ? details[0]?.songName : ''
-          if (typeof firstSong === 'string' && firstSong.trim()) coverUrl = coverUrlBySong(firstSong)
-        } catch {}
-      }
-      next.push({ id: p?.id ?? playlistName, playlistName, coverUrl })
+      const username = typeof p?.username === 'string' ? p.username : ''
+      const coverUrl = await resolveCoverUrl(playlistName, username)
+      next.push({ id: p?.id ?? playlistName, playlistName, username, coverUrl })
     }
     recommendedPlaylists.value = next
   } catch {
@@ -123,6 +120,10 @@ async function loadRecommendedPlaylists() {
   } finally {
     recommendedLoading.value = false
   }
+}
+
+function openAll() {
+  router.push({ name: 'Recommended' })
 }
 
 onMounted(() => {
@@ -205,7 +206,11 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="section-title">推荐歌单</div>
+    <div class="section-head">
+      <div class="section-spacer"></div>
+      <div class="section-title">推荐歌单</div>
+      <button class="section-action" type="button" @click="openAll">为你推荐</button>
+    </div>
 
     <div class="row">
       <div v-if="recommendedLoading" class="empty">加载中...</div>
@@ -215,7 +220,7 @@ onBeforeUnmount(() => {
         :key="p.id"
         class="card item hover-lift"
         :style="{ animationDelay: `${index * 0.1}s` }"
-        @click="openPlaylist(p.playlistName)"
+        @click="openPublicPlaylist(p)"
       >
         <img
           class="item-img"
@@ -231,7 +236,8 @@ onBeforeUnmount(() => {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
+  padding-bottom: 16px;
 }
 
 .card {
@@ -259,7 +265,7 @@ onBeforeUnmount(() => {
   --side-scale: 0.88;
   --side-opacity: 0.3;
   position: relative;
-  height: 320px;
+  height: 260px;
   width: min(980px, 100%);
   margin: 0 auto;
   border-radius: var(--radius);
@@ -419,20 +425,52 @@ onBeforeUnmount(() => {
   right: 18px;
 }
 
+.section-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  margin-top: 10px;
+}
+
+.section-spacer {
+  height: 1px;
+}
+
 .section-title {
-  font-size: 24px;
-  font-weight: 600;
-  margin-top: 8px;
+  justify-self: center;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  margin: 0;
   text-align: center;
   color: var(--text);
-  margin-bottom: 16px;
+}
+
+.section-action {
+  justify-self: end;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 600;
+  transition: var(--transition);
+}
+
+.section-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
-  padding: 4px 8px 16px;
+  padding: 10px 8px 20px;
 }
 
 .empty {
@@ -460,7 +498,7 @@ onBeforeUnmount(() => {
 
 .item-img {
   width: 100%;
-  height: 150px;
+  height: 270px;
   border-radius: var(--radius);
   display: block;
   object-fit: cover;
@@ -479,4 +517,5 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
 </style>

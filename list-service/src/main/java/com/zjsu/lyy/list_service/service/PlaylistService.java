@@ -74,7 +74,7 @@ public class PlaylistService {
 
 	@Transactional(readOnly = true)
 	public List<PlaylistResponse> listPublicPlaylists(int limit) {
-		int size = Math.max(1, Math.min(limit, 50));
+		int size = Math.max(1, Math.min(limit, 200));
 		return playlistRepository.findAllByIsPublicTrueOrderByIdAsc(PageRequest.of(0, size))
 				.stream()
 				.map(PlaylistService::toResponse)
@@ -122,6 +122,18 @@ public class PlaylistService {
 	@Transactional(readOnly = true)
 	public Playlist getPlaylistEntityByUsernameAndName(String username, String playlistName) {
 		return playlistRepository.findByUsernameAndPlaylistName(username, playlistName)
+				.orElseThrow(() -> new NotFoundException("歌单不存在"));
+	}
+
+	@Transactional(readOnly = true)
+	public Playlist getPublicPlaylistEntityByName(String playlistName) {
+		return playlistRepository.findFirstByPlaylistNameAndIsPublicTrueOrderByIdDesc(playlistName)
+				.orElseThrow(() -> new NotFoundException("歌单不存在"));
+	}
+
+	@Transactional(readOnly = true)
+	public Playlist getPublicPlaylistEntityByUsernameAndName(String username, String playlistName) {
+		return playlistRepository.findByUsernameAndPlaylistNameAndIsPublicTrue(username, playlistName)
 				.orElseThrow(() -> new NotFoundException("歌单不存在"));
 	}
 
