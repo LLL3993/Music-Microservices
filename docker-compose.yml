@@ -243,10 +243,19 @@ services:
     ports:
       - "80:80"
     volumes:
-      - music_data:/usr/share/nginx/html/data:ro
+      - music_data:/usr/share/nginx/html/data
     depends_on:
       gateway-service:
         condition: service_started
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -c
+      - >
+        set -e;
+        mkdir -p /usr/share/nginx/html/data/music /usr/share/nginx/html/data/cover /usr/share/nginx/html/data/lrc;
+        chown -R nginx:nginx /usr/share/nginx/html/data;
+        nginx -g 'daemon off;'
 
 volumes:
   user_mysql_data:

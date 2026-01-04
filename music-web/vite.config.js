@@ -34,6 +34,30 @@ function dataFolderPlugin() {
           res.end('Forbidden')
           return
         }
+
+        if (req.method === 'PUT') {
+          try {
+            fs.mkdirSync(path.dirname(abs), { recursive: true })
+          } catch {
+            res.statusCode = 500
+            res.end('Create folder failed')
+            return
+          }
+
+          const stream = fs.createWriteStream(abs)
+          stream.on('error', () => {
+            res.statusCode = 500
+            res.end('Write failed')
+          })
+          stream.on('finish', () => {
+            res.statusCode = 201
+            res.end('OK')
+          })
+          req.pipe(stream)
+          return
+        }
+
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next()
         if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
           res.statusCode = 404
           res.end('Not Found')

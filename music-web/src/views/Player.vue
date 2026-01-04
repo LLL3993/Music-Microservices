@@ -272,23 +272,7 @@ function updateActiveLyricLine(time) {
             <img class="cover" :src="coverUrl" alt="cover" />
           </div>
 
-          <div class="lyrics card">
-            <div class="hint" v-if="lyricLoading">歌词加载中...</div>
-            <div class="hint" v-else-if="lyricError">{{ lyricError }}</div>
-            <div
-              v-for="(line, idx) in lyricItems"
-              :key="idx"
-              class="lyric-line"
-              :class="{ active: idx === activeLine }"
-              @click="seekTo(line.time)"
-            >
-              {{ line.text }}
-            </div>
-          </div>
-        </div>
-
-        <div class="right">
-          <div class="song">
+          <div class="song card">
             <div class="name">{{ songName }}</div>
             <div class="artist">{{ artistName || (songName ? '歌手加载中...' : '') }}</div>
           </div>
@@ -349,9 +333,21 @@ function updateActiveLyricLine(time) {
               </div>
             </div>
           </div>
+        </div>
 
-          <div class="card placeholder">
-            <div class="hint">右侧区域占位（可扩展评论 / 推荐 / 队列）</div>
+        <div class="right">
+          <div class="lyrics card">
+            <div class="hint" v-if="lyricLoading">歌词加载中...</div>
+            <div class="hint" v-else-if="lyricError">{{ lyricError }}</div>
+            <div
+              v-for="(line, idx) in lyricItems"
+              :key="idx"
+              class="lyric-line"
+              :class="{ active: idx === activeLine }"
+              @click="seekTo(line.time)"
+            >
+              {{ line.text }}
+            </div>
           </div>
         </div>
       </div>
@@ -424,21 +420,24 @@ function updateActiveLyricLine(time) {
 .body {
   height: 100%;
   display: grid;
-  grid-template-columns: minmax(420px, 840px) 1fr;
-  gap: 24px;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
   padding-top: 44px;
+  align-items: start;
 }
 
 .left {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
   min-width: 0;
+  align-items: center;
+  padding-left: 58px;
 }
 
 .cover-wrap {
-  width: 360px;
-  height: 360px;
+  width: clamp(300px, 36vw, 440px);
+  height: clamp(300px, 36vw, 440px);
   border-radius: 50%;
   border: 2px solid var(--border);
   background: linear-gradient(
@@ -449,7 +448,7 @@ function updateActiveLyricLine(time) {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto;
+  margin: 0;
   animation: rotate 25s linear infinite;
   animation-play-state: paused;
   box-shadow: var(--shadow-card);
@@ -463,8 +462,8 @@ function updateActiveLyricLine(time) {
 }
 
 .cover {
-  width: 320px;
-  height: 320px;
+  width: clamp(260px, 32vw, 388px);
+  height: clamp(260px, 32vw, 388px);
   border-radius: 50%;
   display: block;
   object-fit: cover;
@@ -490,7 +489,7 @@ function updateActiveLyricLine(time) {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
-  padding: 20px;
+  padding: 16px;
   transition: var(--transition);
 }
 
@@ -499,15 +498,19 @@ function updateActiveLyricLine(time) {
 }
 
 .lyrics {
-  height: clamp(320px, 42vh, 460px);
+  height: clamp(520px, 70vh, 760px);
   overflow-y: auto;
   scrollbar-gutter: stable;
-  width: clamp(220px, 60%, 340px);
-  margin: 0 auto;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-right: 8px;
+  gap: 10px;
+  margin-top: 10px;
+  padding-right: 14px;
+  margin-right: 10px;
+  margin-left: 22px;
+  max-width: 700px;
+  align-self: flex-start;
 }
 
 .lyrics .hint {
@@ -524,8 +527,8 @@ function updateActiveLyricLine(time) {
   color: var(--text-secondary);
   cursor: pointer;
   transition: var(--transition);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.7;
   border: 1px solid transparent;
 }
 
@@ -550,29 +553,38 @@ function updateActiveLyricLine(time) {
 .right {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
   min-width: 0;
+  padding-right: 16px;
+  padding-top: 12px;
+  padding-left: 34px;
+}
+
+.song {
+  width: min(520px, 100%);
+  margin: 0;
 }
 
 .song .name {
-  font-size: 28px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 800;
   color: var(--text);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   line-height: 1.3;
 }
 
 .song .artist {
-  margin-top: 8px;
   color: var(--text-secondary);
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .controls {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  width: min(520px, 100%);
+  margin: 0;
 }
 
 .btn-row {
@@ -688,14 +700,6 @@ function updateActiveLyricLine(time) {
   justify-content: space-between;
   color: var(--text-muted);
   font-size: 13px;
-  font-weight: 500;
-}
-
-.placeholder .hint {
-  color: var(--text-muted);
-  text-align: center;
-  padding: 20px;
-  font-size: 14px;
   font-weight: 500;
 }
 

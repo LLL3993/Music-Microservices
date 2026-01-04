@@ -6,10 +6,12 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
+const defaultSongCover = 'https://dummyimage.com/120x120/999999/ff4400.png&text=MUSIC'
 
 const loading = ref(false)
 const error = ref('')
 const items = ref([])
+const artistBySongName = ref({})
 
 function showToast(message) {
   window.dispatchEvent(new CustomEvent('toast:show', { detail: { message } }))
@@ -38,10 +40,14 @@ function onFavoritesChanged(e) {
   const id = detail?.id
   if (id == null) {
     items.value = items.value.filter((x) => x?.songName !== songName)
+    const nextArtist = { ...(artistBySongName.value || {}) }
+    delete nextArtist[songName]
+    artistBySongName.value = nextArtist
     return
   }
   if (items.value.some((x) => x?.songName === songName)) return
   items.value = [{ id, songName }, ...items.value]
+  loadArtists(items.value)
 }
 
 function pickErrorMessage(err) {
@@ -56,6 +62,22 @@ function getAuthHeader() {
   return { Authorization: `Bearer ${token}` }
 }
 
+function baseUrl() {
+  const b = import.meta.env.BASE_URL
+  return typeof b === 'string' && b ? b : '/'
+}
+
+function coverUrlBySong(song) {
+  if (!song) return ''
+  return `${baseUrl()}data/cover/${encodeURIComponent(song)}.jpg`
+}
+
+function coverUrlForItem(item) {
+  const songName = typeof item?.songName === 'string' ? item.songName : ''
+  const url = coverUrlBySong(songName)
+  return url || defaultSongCover
+}
+
 async function getArtistBySongName(songName) {
   const headers = getAuthHeader()
   if (!headers) return ''
@@ -68,6 +90,43 @@ async function getArtistBySongName(songName) {
   } catch {
     return ''
   }
+}
+
+async function loadArtists(list) {
+  const headers = getAuthHeader()
+  if (!headers) return
+
+  const arr = Array.isArray(list) ? list : []
+  if (!arr.length) return
+
+  const queued = []
+  const seen = new Set()
+  for (const x of arr) {
+    const songName = typeof x?.songName === 'string' ? x.songName.trim() : ''
+    if (!songName || seen.has(songName)) continue
+    seen.add(songName)
+    if (typeof artistBySongName.value?.[songName] === 'string') continue
+    queued.push(songName)
+  }
+  if (!queued.length) return
+
+  const nextMap = { ...(artistBySongName.value || {}) }
+  const batchSize = 6
+  for (let i = 0; i < queued.length; i += batchSize) {
+    const batch = queued.slice(i, i + batchSize)
+    const results = await Promise.all(batch.map(async (s) => ({ songName: s, artist: await getArtistBySongName(s) })))
+    for (const r of results) nextMap[r.songName] = r.artist || ''
+    artistBySongName.value = { ...nextMap }
+  }
+}
+
+function artistLabelBySongName(songName) {
+  const name = typeof songName === 'string' ? songName : ''
+  const picked = artistBySongName.value?.[name]
+  if (typeof picked === 'string' && picked.trim()) return picked
+  const headers = getAuthHeader()
+  if (!headers) return ''
+  return '歌手加载中...'
 }
 
 async function goPlayer(songName) {
@@ -93,6 +152,7 @@ async function loadFavorites() {
   if (!headers) {
     error.value = '请先登录后查看我的收藏'
     items.value = []
+    artistBySongName.value = {}
     emitFavoritesChanged({ map: {} })
     return
   }
@@ -103,6 +163,7 @@ async function loadFavorites() {
     const { data } = await axios.get(`${apiBase}/api/favorites/username`, { headers })
     const arr = Array.isArray(data) ? data : []
     items.value = arr
+    loadArtists(items.value)
     const map = {}
     for (const f of arr) {
       if (!f || !f.songName) continue
@@ -133,6 +194,9 @@ async function toggleFavorite(item) {
     items.value = items.value.filter((x) => x?.id !== id)
     emitFavoritesChanged({ songName, id: null })
     showToast('已取消收藏')
+    const nextArtist = { ...(artistBySongName.value || {}) }
+    delete nextArtist[songName]
+    artistBySongName.value = nextArtist
   } catch (err) {
     showToast(pickErrorMessage(err))
   }
@@ -164,13 +228,17 @@ onBeforeUnmount(() => {
     <div class="list card" v-if="!loading && !error && items.length">
       <div class="items">
         <div v-for="f in items" :key="f.id" class="item">
+          <button class="cover-btn" type="button" @click="goPlayer(f.songName)">
+            <img class="cover" :src="coverUrlForItem(f)" alt="cover" />
+          </button>
           <div class="meta">
             <div class="name">{{ f.songName }}</div>
+            <div class="artist" v-if="artistLabelBySongName(f.songName)">{{ artistLabelBySongName(f.songName) }}</div>
           </div>
           <button class="icon-action fav" type="button" @click="toggleFavorite(f)">
             <svg width="18" height="18" viewBox="0 0 24 24">
               <path
-                d="M12 21s-7-4.4-9.5-8.3C.5 9.4 2.2 6 6 6c2.1 0 3.4 1.2 4 2 0.6-0.8 1.9-2 4-2 3.8 0 5.5 3.4 3.5 6.7C19 16.6 12 21 12 21Z"
+                d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"
                 fill="currentColor"
               />
             </svg>
@@ -249,6 +317,26 @@ onBeforeUnmount(() => {
   background: var(--panel);
 }
 
+.cover {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  background: var(--card);
+  flex: none;
+}
+
+.cover-btn {
+  flex: none;
+  border-radius: 14px;
+  outline: none;
+}
+
+.cover-btn:hover .cover {
+  border-color: var(--accent);
+}
+
 .icon-action {
   height: 36px;
   width: 36px;
@@ -272,6 +360,16 @@ onBeforeUnmount(() => {
 }
 
 .name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artist {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;

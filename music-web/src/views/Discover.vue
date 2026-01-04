@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
-const defaultPlaylistCover = 'https://dummyimage.com/320x100/999999/ff4400.png&text=PLAYLIST'
+const defaultPlaylistCover = `${baseUrl()}data/pic/playlist.png`
 
 const router = useRouter()
 
@@ -509,6 +509,32 @@ onBeforeUnmount(() => {
 .item:hover .item-img {
   transform: scale(1.05);
   filter: brightness(1) contrast(1.1);
+}
+
+.item-meta {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.item-name {
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 980px) {

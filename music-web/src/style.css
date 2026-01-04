@@ -34,9 +34,27 @@
   --radius-full: 9999px;
   
   /* 动画 */
-  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: background-color 0.22s cubic-bezier(0.2, 0, 0, 1), color 0.22s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.22s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.22s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.22s cubic-bezier(0.2, 0, 0, 1), opacity 0.22s cubic-bezier(0.2, 0, 0, 1),
+    filter 0.22s cubic-bezier(0.2, 0, 0, 1);
+  --transition-fast: background-color 0.14s cubic-bezier(0.2, 0, 0, 1), color 0.14s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.14s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.14s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.14s cubic-bezier(0.2, 0, 0, 1), opacity 0.14s cubic-bezier(0.2, 0, 0, 1),
+    filter 0.14s cubic-bezier(0.2, 0, 0, 1);
+  --transition-slow: background-color 0.38s cubic-bezier(0.2, 0, 0, 1), color 0.38s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.38s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.38s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.38s cubic-bezier(0.2, 0, 0, 1), opacity 0.38s cubic-bezier(0.2, 0, 0, 1),
+    filter 0.38s cubic-bezier(0.2, 0, 0, 1);
+
+  --panel-glass: color-mix(in srgb, var(--panel) 84%, transparent);
+  --card-glass: color-mix(in srgb, var(--card) 82%, transparent);
+  --overlay: color-mix(in srgb, #000 72%, transparent);
+
+  --aurora-1: rgba(255, 78, 78, 0.34);
+  --aurora-2: rgba(124, 108, 255, 0.28);
+  --aurora-3: rgba(255, 177, 153, 0.24);
+  --aurora-4: rgba(82, 255, 210, 0.2);
 }
 
 html[data-theme='light'] {
@@ -58,6 +76,15 @@ html[data-theme='light'] {
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   --shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.15);
   --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.08);
+
+  --panel-glass: color-mix(in srgb, var(--panel) 76%, transparent);
+  --card-glass: color-mix(in srgb, var(--card) 72%, transparent);
+  --overlay: color-mix(in srgb, #000 42%, transparent);
+
+  --aurora-1: rgba(255, 78, 78, 0.28);
+  --aurora-2: rgba(124, 108, 255, 0.22);
+  --aurora-3: rgba(255, 177, 153, 0.22);
+  --aurora-4: rgba(0, 176, 255, 0.2);
 }
 
 /* 全局样式重置 */
@@ -73,6 +100,8 @@ html {
   line-height: 1.6;
   background: var(--bg);
   color: var(--text);
+  color-scheme: light dark;
+  transition: var(--transition);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -85,6 +114,7 @@ body {
   background: var(--bg);
   color: var(--text);
   overflow-x: hidden;
+  transition: var(--transition);
 }
 
 /* 按钮样式 */
@@ -161,7 +191,44 @@ a:hover {
 /* 应用容器 */
 #app {
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
+  position: relative;
+  isolation: isolate;
+  background: var(--bg);
+}
+
+#app::before,
+#app::after {
+  content: '';
+  position: fixed;
+  inset: -35vh -35vw;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 600px at 18% 22%, var(--aurora-1), transparent 62%),
+    radial-gradient(860px 560px at 82% 26%, var(--aurora-2), transparent 60%),
+    radial-gradient(780px 520px at 30% 88%, var(--aurora-3), transparent 62%),
+    radial-gradient(820px 540px at 78% 84%, var(--aurora-4), transparent 64%);
+  filter: blur(58px) saturate(205%);
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1.02);
+  will-change: transform, filter;
+  animation:
+    aurora-drift 18s ease-in-out infinite alternate,
+    aurora-hue 70s linear infinite;
+}
+
+#app::after {
+  inset: -40vh -40vw;
+  opacity: 0.9;
+  filter: blur(90px) saturate(230%);
+  animation-duration: 26s, 110s;
+  animation-direction: alternate-reverse, normal;
+}
+
+html.theme-switching #app::before,
+html.theme-switching #app::after {
+  animation: none;
+  filter: blur(46px) saturate(170%);
 }
 
 /* 动画效果 */
@@ -301,6 +368,37 @@ a:hover {
   }
   50% {
     transform: translateY(-10px);
+  }
+}
+
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(-22%, -18%, 0) scale(1.06) rotate(-4deg);
+  }
+  50% {
+    transform: translate3d(12%, 20%, 0) scale(1.11) rotate(2deg);
+  }
+  100% {
+    transform: translate3d(24%, -14%, 0) scale(1.08) rotate(4deg);
+  }
+}
+
+@keyframes aurora-hue {
+  0% {
+    filter: blur(62px) saturate(185%) hue-rotate(0deg);
+  }
+  50% {
+    filter: blur(70px) saturate(235%) hue-rotate(180deg);
+  }
+  100% {
+    filter: blur(62px) saturate(205%) hue-rotate(330deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app::before,
+  #app::after {
+    animation: none;
   }
 }
 

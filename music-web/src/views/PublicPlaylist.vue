@@ -7,7 +7,7 @@ const router = useRouter()
 const route = useRoute()
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
-const defaultCover = 'https://dummyimage.com/320x100/999999/ff4400.png&text=PLAYLIST'
+const defaultCover = `${baseUrl()}data/pic/playlist.png`
 
 function baseUrl() {
   const b = import.meta.env.BASE_URL
@@ -29,6 +29,10 @@ function getAuthHeader() {
   const token = localStorage.getItem('auth_token') || ''
   if (!token) return null
   return { Authorization: `Bearer ${token}` }
+}
+
+function requestLogin() {
+  window.dispatchEvent(new CustomEvent('auth:open', { detail: { mode: 'login' } }))
 }
 
 async function getArtistBySongName(songName) {
@@ -64,6 +68,10 @@ function back() {
 }
 
 async function goPlayer(songName) {
+  if (!getAuthHeader()) {
+    requestLogin()
+    return
+  }
   const queue = details.value.map((x) => x?.songName).filter((x) => typeof x === 'string' && x.trim())
   const index = queue.findIndex((x) => x === songName)
   const artist = await getArtistBySongName(songName)
@@ -282,8 +290,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   background: var(--panel);
   margin-top: 0;
-  flex-direction: row;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .detail-layout {
@@ -291,8 +299,19 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(320px, 460px) 1fr;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   min-height: 520px;
+}
+
+.detail-aside {
+  min-width: 0;
+  min-height: 520px;
+  max-height: calc(100vh - 320px);
+  overflow: auto;
+}
+
+.detail-aside .detail-head {
+  height: 100%;
 }
 
 .detail-songs {
@@ -307,54 +326,58 @@ onBeforeUnmount(() => {
 }
 
 .cover {
-  width: 220px;
-  height: 220px;
+  width: 200px;
+  height: 200px;
   border-radius: 12px;
   border: 1px solid var(--border);
   object-fit: cover;
   flex: none;
+  align-self: center;
 }
 
 .info {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
 .name {
   font-size: 26px;
   font-weight: 800;
   color: var(--text);
-  line-height: 1.1;
-  word-break: break-word;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .creator {
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  margin-top: 10px;
 }
 
 .desc {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.55;
+  background: color-mix(in srgb, var(--card) 50%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-height: 190px;
 }
 
 .desc-label {
-  color: var(--muted);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 700;
-  flex: none;
+  margin-bottom: 6px;
 }
 
 .desc-text {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-  opacity: 0.95;
-  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .detail-items {

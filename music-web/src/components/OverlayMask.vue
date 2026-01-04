@@ -41,15 +41,15 @@ const handleClick = () => {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
+  background: var(--overlay);
+  backdrop-filter: blur(18px);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
   visibility: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: var(--transition);
 }
 
 .overlay-mask.active {
@@ -58,12 +58,13 @@ const handleClick = () => {
 }
 
 .mask-content {
-  background: var(--card);
+  background: var(--card-glass);
   border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-hover);
+  backdrop-filter: blur(18px);
   transform: scale(0.9);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: var(--transition);
   max-width: 90vw;
   max-height: 90vh;
   overflow: auto;

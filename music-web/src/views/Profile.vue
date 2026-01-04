@@ -309,7 +309,11 @@ onBeforeUnmount(() => {
         <div class="modal-title">
           {{ editMode === 'username' ? '修改用户名' : editMode === 'email' ? '修改邮箱' : '修改密码' }}
         </div>
-        <button class="modal-close" type="button" @click="closeEdit">×</button>
+        <button class="modal-close" type="button" @click="closeEdit" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
       </div>
 
       <div class="form">
@@ -401,8 +405,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
-  padding: 18px;
-  min-height: 180px;
+  padding: 14px;
 }
 
 .hint {
@@ -411,27 +414,27 @@ onBeforeUnmount(() => {
   font-weight: 600;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   justify-content: center;
-  min-height: 140px;
+  min-height: 120px;
 }
 
 .profile {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 .profile-head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .avatar {
-  height: 64px;
-  width: 64px;
+  height: 80px;
+  width: 80px;
   border-radius: var(--radius-full);
   border: 2px solid var(--border);
   object-fit: cover;
@@ -442,11 +445,11 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .name {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 800;
   color: var(--text);
   white-space: nowrap;
@@ -455,7 +458,7 @@ onBeforeUnmount(() => {
 }
 
 .sub {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -466,7 +469,7 @@ onBeforeUnmount(() => {
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .row {
@@ -474,21 +477,21 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px;
+  padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--panel);
 }
 
 .label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-secondary);
   flex: none;
 }
 
 .value {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text);
   min-width: 0;
@@ -564,8 +567,16 @@ onBeforeUnmount(() => {
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 0;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.modal-close svg {
+  display: block;
 }
 
 .form {

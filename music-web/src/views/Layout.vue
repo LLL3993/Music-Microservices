@@ -100,6 +100,7 @@ const playerState = ref({
   songName: '',
   artist: '',
   isPlaying: false,
+  playMode: 'order',
   currentTime: 0,
   duration: 0,
   audioUrl: '',
@@ -107,6 +108,7 @@ const playerState = ref({
   coverUrl: '',
   queue: [],
   index: 0,
+  queueSource: null,
 })
 
 const audioEl = ref(null)
@@ -128,6 +130,28 @@ const queueSourcePublicPlaylists = ref([])
 const queueSourceFavoriteSongs = ref([])
 const queueSourceApplying = ref(false)
 const queueSourceApplyError = ref('')
+
+const activeQueueSource = computed(() => {
+  const src = playerState.value?.queueSource
+  if (!src || typeof src !== 'object') return null
+  const type = src.type === 'favorites' || src.type === 'playlist' ? src.type : ''
+  if (!type) return null
+  if (type === 'favorites') return { type }
+  const playlistName = typeof src.playlistName === 'string' ? src.playlistName.trim() : ''
+  const username = typeof src.username === 'string' ? src.username.trim() : ''
+  if (!playlistName || !username) return null
+  return { type, playlistName, username }
+})
+
+const isQueueSourceFavoritesActive = computed(() => activeQueueSource.value?.type === 'favorites')
+
+function isQueueSourcePlaylistActive(p) {
+  const cur = activeQueueSource.value
+  if (!cur || cur.type !== 'playlist') return false
+  const playlistName = typeof p?.playlistName === 'string' ? p.playlistName.trim() : ''
+  const username = typeof p?.username === 'string' ? p.username.trim() : ''
+  return Boolean(playlistName && username && playlistName === cur.playlistName && username === cur.username)
+}
 
 const queueSourceDisplayedPlaylists = computed(() => {
   return queueSourceDisplayTab.value === 'public' ? queueSourcePublicPlaylists.value : queueSourceMinePlaylists.value
@@ -311,11 +335,18 @@ function setPlayerState(next) {
   const audioUrl = musicUrlBySong(nextSongName)
   const lrcUrl = lrcUrlBySong(nextSongName)
   const coverUrl = coverUrlBySong(nextSongName)
+  const queueSource = next?.queueSource && typeof next.queueSource === 'object' ? next.queueSource : null
+  const playMode = next?.playMode === 'shuffle' || next?.playMode === 'loop' || next?.playMode === 'order'
+    ? next.playMode
+    : playerState.value.playMode === 'shuffle' || playerState.value.playMode === 'loop' || playerState.value.playMode === 'order'
+      ? playerState.value.playMode
+      : 'order'
 
   playerState.value = {
     songName: nextSongName,
     artist: nextArtist,
     isPlaying: Boolean(next?.isPlaying),
+    playMode,
     currentTime: Number.isFinite(next?.currentTime) ? next.currentTime : 0,
     duration: Number.isFinite(next?.duration) ? next.duration : 0,
     audioUrl,
@@ -323,6 +354,7 @@ function setPlayerState(next) {
     coverUrl,
     queue: Array.isArray(next?.queue) ? next.queue.filter((x) => typeof x === 'string') : [],
     index: Number.isFinite(next?.index) ? next.index : 0,
+    queueSource,
   }
   persistPlayerState()
   emitPlayerState()
@@ -512,10 +544,10 @@ async function applyQueueFromPlaylist(p) {
     const currentIdx = queue.findIndex((x) => x === currentSong)
     playerState.value.queue = queue
     playerState.value.index = currentIdx >= 0 ? currentIdx : 0
+    playerState.value.queueSource = { type: 'playlist', playlistName, username }
     persistPlayerState()
     emitPlayerState()
     showToast(`已切换：${playlistName}`)
-    closeQueueSource()
   } catch {
     queueSourceApplyError.value = '歌单歌曲加载失败'
   } finally {
@@ -538,10 +570,10 @@ async function applyQueueFromFavorites() {
     const idx = list.findIndex((x) => x === currentSong)
     playerState.value.queue = [...list]
     playerState.value.index = idx >= 0 ? idx : 0
+    playerState.value.queueSource = { type: 'favorites' }
     persistPlayerState()
     emitPlayerState()
     showToast('已切换：我的收藏')
-    closeQueueSource()
   } finally {
     queueSourceApplying.value = false
   }
@@ -638,6 +670,17 @@ function replayCurrent() {
   startPlayback()
 }
 
+function pickRandomIndex(len, avoid) {
+  const n = Number(len)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  const a = Number(avoid)
+  if (!Number.isFinite(a) || a < 0 || a >= n) return Math.floor(Math.random() * n)
+  if (n === 1) return 0
+  let idx = Math.floor(Math.random() * n)
+  if (idx === a) idx = (idx + 1 + Math.floor(Math.random() * (n - 1))) % n
+  return idx
+}
+
 async function playPrev() {
   if (isNavigating.value) return
   isNavigating.value = true
@@ -649,7 +692,9 @@ async function playPrev() {
   }
   const currentIdx = q.findIndex((s) => s === playerState.value.songName)
   const baseIdx = currentIdx >= 0 ? currentIdx : 0
-  const nextIndex = (baseIdx - 1 + q.length) % q.length
+  const mode = playerState.value.playMode
+  const nextIndex =
+    mode === 'shuffle' ? pickRandomIndex(q.length, baseIdx) : (baseIdx - 1 + q.length) % q.length
   playerState.value.index = nextIndex
   playerState.value.songName = q[nextIndex]
   playerState.value.artist = ''
@@ -681,7 +726,11 @@ async function playNext() {
   }
   const currentIdx = q.findIndex((s) => s === playerState.value.songName)
   const baseIdx = currentIdx >= 0 ? currentIdx : -1
-  const nextIndex = (baseIdx + 1) % q.length
+  const mode = playerState.value.playMode
+  const nextIndex =
+    mode === 'shuffle'
+      ? pickRandomIndex(q.length, baseIdx >= 0 ? baseIdx : 0)
+      : (baseIdx + 1) % q.length
   playerState.value.index = nextIndex
   playerState.value.songName = q[nextIndex]
   playerState.value.artist = ''
@@ -703,8 +752,12 @@ async function playNext() {
 }
 
 function toggleTheme() {
+  const root = document.documentElement
+  root.classList.add('theme-switching')
+  window.setTimeout(() => root.classList.remove('theme-switching'), 260)
+
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  document.documentElement.setAttribute('data-theme', theme.value)
+  root.setAttribute('data-theme', theme.value)
   localStorage.setItem('theme', theme.value)
 }
 
@@ -759,6 +812,11 @@ function logout() {
   playerState.value.currentTime = 0
   persistPlayerState()
   emitPlayerState()
+
+  headerKeyword.value = ''
+  try {
+    sessionStorage.removeItem('music_web_search_state_v1')
+  } catch {}
 
   token.value = ''
   user.value = null
@@ -948,11 +1006,35 @@ function onAudioTimeUpdate() {
 }
 
 function onAudioEnded() {
+  if (playerState.value.playMode === 'loop') {
+    replayCurrent()
+    return
+  }
   if (playerState.value.queue.length) {
     playNext()
     return
   }
   pausePlayback()
+}
+
+function playModeText(mode) {
+  if (mode === 'shuffle') return '随机播放'
+  if (mode === 'loop') return '循环播放'
+  return '顺序播放'
+}
+
+function togglePlayMode() {
+  const cur = playerState.value.playMode
+  const next = cur === 'order' ? 'shuffle' : cur === 'shuffle' ? 'loop' : 'order'
+  playerState.value.playMode = next
+  persistPlayerState()
+  emitPlayerState()
+  showToast(playModeText(next))
+}
+
+function onPlayerbarPlayMode() {
+  if (!requireAuthOrOpenLogin()) return
+  togglePlayMode()
 }
 
 function onAudioError() {
@@ -1115,7 +1197,7 @@ onBeforeUnmount(() => {
             v-model="headerKeyword"
             class="input"
             type="text"
-            placeholder="搜索歌曲 / 歌手（模糊查询）"
+            placeholder="搜索歌曲 / 歌手"
             @keyup.enter="onHeaderSearchEnter"
           />
         </div>
@@ -1123,7 +1205,7 @@ onBeforeUnmount(() => {
 
       <div class="topbar-right">
         <template v-if="!isAuthed">
-          <button class="btn ghost" type="button" @click="openLogin">登录</button>
+          <button class="btn ghost login-rotate" type="button" @click="openLogin">登录</button>
           <button class="btn primary" type="button" @click="openRegister">注册</button>
         </template>
 
@@ -1201,7 +1283,7 @@ onBeforeUnmount(() => {
             :class="{ active: isPlaylistsActive }"
             href="/playlists"
             @click.prevent="router.push({ name: 'Playlists' })"
-            >歌单</a
+            >我的歌单</a
           >
           <a
             v-if="isAuthed && isAdmin"
@@ -1343,6 +1425,99 @@ onBeforeUnmount(() => {
               </svg>
             </button>
 
+            <button
+              class="playerbar-btn"
+              type="button"
+              :disabled="isAuthed && !playerState.songName"
+              @click="onPlayerbarPlayMode"
+            >
+              <svg v-if="playerState.playMode === 'order'" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M7 6h14M7 12h10M7 18h6"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M3 6h.01M3 12h.01M3 18h.01"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <svg v-else-if="playerState.playMode === 'shuffle'" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M16 3h5v5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M4 4l7 7"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M4 20l7-7"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M16 3c3 0 5 2 5 5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+                <path
+                  d="M16 21h5v-5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M16 21c3 0 5-2 5-5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M17 2l4 4-4 4"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M3 11a8 8 0 0 1 14-5h4"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M7 22l-4-4 4-4"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M21 13a8 8 0 0 1-14 5H3"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+
             <button class="playerbar-btn" type="button" @click="openQueueSource">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path
@@ -1406,7 +1581,11 @@ onBeforeUnmount(() => {
     <div class="modal">
       <div class="modal-head">
         <div class="modal-title">{{ authMode === 'login' ? '登录' : '注册' }}</div>
-        <button class="modal-close" type="button" @click="closeAuth">×</button>
+        <button class="modal-close auth-close" type="button" @click="closeAuth" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
       </div>
 
       <div v-if="authMode === 'login'" class="form" @keydown.enter.prevent="submitLogin">
@@ -1464,7 +1643,11 @@ onBeforeUnmount(() => {
     <div class="modal queue-source-modal">
       <div class="modal-head">
         <div class="modal-title">切换下一首/上一首歌单来源</div>
-        <button class="modal-close" type="button" @click="closeQueueSource">×</button>
+        <button class="modal-close" type="button" @click="closeQueueSource" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
       </div>
 
       <div class="queue-source-tabs">
@@ -1499,6 +1682,7 @@ onBeforeUnmount(() => {
               <button
                 v-if="queueSourceDisplayTab === 'mine'"
                 class="queue-source-item"
+                :class="{ active: isQueueSourceFavoritesActive }"
                 type="button"
                 :disabled="queueSourceApplying"
                 @click="applyQueueFromFavoritesEnsured"
@@ -1514,6 +1698,7 @@ onBeforeUnmount(() => {
                 v-for="p in queueSourceDisplayedPlaylists"
                 :key="`${p?.playlistName || ''}-${p?.username || ''}-${p?.id || ''}`"
                 class="queue-source-item"
+                :class="{ active: isQueueSourcePlaylistActive(p) }"
                 type="button"
                 :disabled="queueSourceApplying"
                 @click="applyQueueFromPlaylist(p)"
@@ -1543,7 +1728,7 @@ onBeforeUnmount(() => {
 .layout {
   height: 100vh;
   min-height: 0;
-  background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
+  background: transparent;
   color: var(--text);
   display: flex;
   flex-direction: column;
@@ -1555,9 +1740,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 64px;
+  padding: 0 clamp(16px, 4vw, 64px);
   border-bottom: 1px solid var(--border);
-  background: rgba(var(--panel), 0.95);
+  background: var(--panel-glass);
   backdrop-filter: blur(20px);
   position: sticky;
   top: 0;
@@ -1704,6 +1889,15 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-hover);
 }
 
+.btn.login-rotate {
+  transform-origin: center;
+}
+
+
+.btn.login-rotate:hover {
+  transform: translateY(-1px);
+}
+
 .btn.primary {
   background: var(--accent-gradient);
   color: white;
@@ -1715,14 +1909,15 @@ onBeforeUnmount(() => {
 }
 
 .btn.ghost {
-  background: #f5f1e8;
-  border-color: transparent;
-  color: #1d1d1d;
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+  color: var(--text);
 }
 
 .btn.ghost:hover {
-  background: #fff9ef;
-  color: #1d1d1d;
+  background: color-mix(in srgb, var(--accent) 14%, var(--card));
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  color: var(--text);
 }
 
 .icon-btn {
@@ -1832,17 +2027,18 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   min-height: 0;
-  padding: 0 40px;
+  padding: 0 clamp(12px, 3.2vw, 40px);
 }
 
 .sidebar {
   width: 240px;
   border-right: 1px solid var(--border);
   padding: 20px 16px;
-  background: var(--panel);
+  background: var(--panel-glass);
   display: flex;
   flex-direction: column;
   gap: 24px;
+  backdrop-filter: blur(18px);
 }
 
 .nav {
@@ -1920,7 +2116,11 @@ onBeforeUnmount(() => {
   overflow: auto;
   min-height: 0;
   min-width: 0;
-  background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg) 72%, transparent) 0%,
+    color-mix(in srgb, var(--bg-secondary) 72%, transparent) 100%
+  );
 }
 
 .playerbar {
@@ -2221,9 +2421,17 @@ onBeforeUnmount(() => {
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 0;
   line-height: 1;
   transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.modal-close svg {
+  display: block;
 }
 
 .modal-close:hover {
@@ -2387,6 +2595,12 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: var(--transition);
   color: var(--text);
+}
+
+.queue-source-item.active {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  box-shadow: var(--shadow-hover);
 }
 
 .queue-source-item:hover {

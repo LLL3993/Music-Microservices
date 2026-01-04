@@ -9,6 +9,15 @@ const route = useRoute()
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
 const defaultSongCover = 'https://dummyimage.com/320x100/999999/ff4400.png&text=MUSIC'
+const SEARCH_STATE_KEY = 'music_web_search_state_v1'
+
+function safeParseJson(value) {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
 
 function baseUrl() {
   const b = import.meta.env.BASE_URL
@@ -21,14 +30,13 @@ function coverUrlBySong(song) {
 }
 
 const hotTags = [
-  '周杰伦',
-  '五月天',
-  'Taylor Swift',
+  '马克西姆',
+  '克罗地亚狂想曲',
   '林俊杰',
   '陈奕迅',
-  'Adele',
-  '说唱',
-  '电子',
+  '周传雄',
+  'Counting Stars',
+  '卡农',
 ]
 
 const keyword = ref('')
@@ -45,6 +53,51 @@ const addModalSongName = ref('')
 const addModalSelectedPlaylists = ref([])
 const addModalSubmitting = ref(false)
 const addModalError = ref('')
+
+function loadSearchState() {
+  try {
+    const raw = sessionStorage.getItem(SEARCH_STATE_KEY) || ''
+    const parsed = safeParseJson(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (typeof parsed.keyword !== 'string' || !parsed.keyword.trim()) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function saveSearchState() {
+  try {
+    const key = keyword.value.trim()
+    if (!key) return
+    sessionStorage.setItem(
+      SEARCH_STATE_KEY,
+      JSON.stringify({
+        keyword: key,
+        results: Array.isArray(results.value) ? results.value : [],
+        error: error.value || '',
+        favoriteIdBySongName: favoriteIdBySongName.value || {},
+        favoritesLoaded: Boolean(favoritesLoaded.value),
+        ts: Date.now(),
+      }),
+    )
+  } catch {}
+}
+
+function clearSearchState(options) {
+  try {
+    sessionStorage.removeItem(SEARCH_STATE_KEY)
+  } catch {}
+  keyword.value = ''
+  results.value = []
+  error.value = ''
+
+  const clearRoute = options?.clearRoute !== false
+  if (!clearRoute) return
+  if (route.name !== 'Search') return
+  if (!route.query.q) return
+  router.replace({ name: 'Search', query: {} }).catch(() => {})
+}
 
 function emitFavoritesChanged(detail) {
   window.dispatchEvent(new CustomEvent('favorites:changed', { detail: { ...(detail || {}), source: 'search' } }))
@@ -66,13 +119,40 @@ function onFavoritesChanged(e) {
   else next[songName] = id
   favoriteIdBySongName.value = next
   favoritesLoaded.value = true
+  saveSearchState()
+}
+
+function onAuthChanged(e) {
+  const nextToken = typeof e?.detail?.token === 'string' ? e.detail.token : ''
+  if (nextToken) return
+  clearSearchState({ clearRoute: true })
 }
 
 watch(
   () => route.query.q,
   async (q) => {
-    keyword.value = typeof q === 'string' ? q : ''
-    await doSearch()
+    const nextQ = typeof q === 'string' ? q.trim() : ''
+    if (nextQ) {
+      keyword.value = nextQ
+      await doSearch()
+      return
+    }
+
+    const saved = loadSearchState()
+    if (saved) {
+      keyword.value = saved.keyword
+      results.value = Array.isArray(saved.results) ? saved.results : []
+      error.value = typeof saved.error === 'string' ? saved.error : ''
+      if (saved.favoriteIdBySongName && typeof saved.favoriteIdBySongName === 'object') {
+        favoriteIdBySongName.value = saved.favoriteIdBySongName
+        favoritesLoaded.value = Boolean(saved.favoritesLoaded)
+      }
+      return
+    }
+
+    keyword.value = ''
+    results.value = []
+    error.value = ''
   },
   { immediate: true },
 )
@@ -199,6 +279,7 @@ async function toggleFavorite(songName) {
       favoriteIdBySongName.value = next
       emitFavoritesChanged({ songName, id: null })
       showToast('已取消收藏')
+      saveSearchState()
     } else {
       const { data } = await axios.post(`${apiBase}/api/favorites`, { songName }, { headers })
       const id = data?.id
@@ -207,6 +288,7 @@ async function toggleFavorite(songName) {
         emitFavoritesChanged({ songName, id })
       }
       showToast('已收藏')
+      saveSearchState()
     }
   } catch (err) {
     showToast(pickErrorMessage(err))
@@ -344,15 +426,18 @@ async function doSearch() {
     error.value = pickErrorMessage(err)
   } finally {
     loading.value = false
+    saveSearchState()
   }
 }
 
 onMounted(() => {
   window.addEventListener('favorites:changed', onFavoritesChanged)
+  window.addEventListener('auth:changed', onAuthChanged)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('favorites:changed', onFavoritesChanged)
+  window.removeEventListener('auth:changed', onAuthChanged)
 })
 </script>
 
@@ -399,6 +484,11 @@ onBeforeUnmount(() => {
             class="cover"
             :src="coverUrlBySong(s.songName)"
             alt="cover"
+            role="button"
+            tabindex="0"
+            @click="playSong(s.songName, s.artist)"
+            @keydown.enter.prevent="playSong(s.songName, s.artist)"
+            @keydown.space.prevent="playSong(s.songName, s.artist)"
           />
           <div class="meta">
             <div class="name">{{ s.songName }}</div>
@@ -439,7 +529,11 @@ onBeforeUnmount(() => {
       <div class="add-modal">
         <div class="add-modal-head">
           <div class="add-modal-title">加入歌单</div>
-          <button class="modal-close" type="button" @click="closeAddModal">×</button>
+          <button class="modal-close" type="button" @click="closeAddModal" aria-label="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </button>
         </div>
 
         <div class="add-modal-sub" v-if="addModalSongName">歌曲：{{ addModalSongName }}</div>
@@ -600,6 +694,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   object-fit: cover;
   transition: var(--transition);
+  cursor: pointer;
 }
 
 .item:hover .cover {
@@ -737,8 +832,16 @@ onBeforeUnmount(() => {
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 0;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.modal-close svg {
+  display: block;
 }
 
 .add-modal-sub {

@@ -4,7 +4,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || ''
-const defaultPlaylistCover = 'https://dummyimage.com/320x100/999999/ff4400.png&text=PLAYLIST'
+const defaultPlaylistCover = `${baseUrl()}data/pic/playlist.png`
 
 const router = useRouter()
 
